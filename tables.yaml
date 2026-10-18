@@ -1,0 +1,83 @@
+# Schema and Extraction Specification for NBA Tables
+# Used by `extract_tables.py load --pdf <path> --spec tables.yaml`
+
+tables:
+  draft_2026:
+    description: "2026 NBA Draft picks (Round 1 and Round 2) including draft position, player, drafting team, previous institution, and country of origin."
+    pages:
+      - page: 52
+        bbox: [30, 50, 425, 635]
+    strategy: "word_columns"
+    column_splits:
+      pick: [30, 52]
+      player: [52, 140]
+      drafting_team: [140, 240]
+      before_nba: [240, 345]
+      country: [345, 425]
+    columns:
+      pick: INTEGER
+      player: TEXT
+      drafting_team: TEXT
+      before_nba: TEXT
+      country: TEXT
+    cleanup:
+      strip_whitespace: true
+      numeric_columns: ["pick"]
+
+  all_nba_by_player:
+    description: "All-time All-NBA team selections by player, containing total selections as well as First, Second, and Third Team counts."
+    pages:
+      - page: 111
+        blocks:
+          - x_range: [30, 155]
+            splits: [86, 105, 118, 132]
+          - x_range: [155, 280]
+            splits: [215, 232, 245, 260]
+          - x_range: [280, 410]
+            splits: [342, 358, 372, 386]
+      - page: 112
+        blocks:
+          - x_range: [30, 155]
+            splits: [86, 105, 118, 132]
+    strategy: "stacked_column_blocks"
+    columns:
+      player: TEXT
+      total: INTEGER
+      first_team: INTEGER
+      second_team: INTEGER
+      third_team: INTEGER
+    cleanup:
+      strip_whitespace: true
+      numeric_columns: ["total", "first_team", "second_team", "third_team"]
+
+  nba_finals:
+    description: "Historical NBA Finals results from 1947 to 2026 with winning and losing teams, head coaches, and series game counts."
+    pages:
+      - page: 179
+        bbox: [30, 45, 415, 630]
+      - page: 180
+        bbox: [30, 45, 415, 250]
+    strategy: "line_regex"
+    line_pattern: '^(\d{4})\s+(.+?)\s+(\*?[A-Za-z0-9\s.]+?)\s*\(([^)]+)\)\s+(\*?[A-Za-z0-9\s.]+?)\s*\(([^)]+)\)\s+(\d)-(\d)$'
+    line_fields:
+      - year
+      - dates
+      - winner_team
+      - winner_coach
+      - loser_team
+      - loser_coach
+      - winner_games
+      - loser_games
+    columns:
+      year: INTEGER
+      dates: TEXT
+      winner_team: TEXT
+      winner_coach: TEXT
+      loser_team: TEXT
+      loser_coach: TEXT
+      winner_games: INTEGER
+      loser_games: INTEGER
+    cleanup:
+      strip_whitespace: true
+      strip_asterisks: ["winner_team", "loser_team"]
+      numeric_columns: ["year", "winner_games", "loser_games"]

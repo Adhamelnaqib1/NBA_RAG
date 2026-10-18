@@ -1,0 +1,16 @@
+chromadb
+google-genai
+pypdf
+python-dotenv
+tqdm
+langchain
+langchain-core
+langchain-google-genai
+langgraph
+pdfplumber
+pandas
+pyyaml
+tabulate
+pytest
+ruff
+mypy
