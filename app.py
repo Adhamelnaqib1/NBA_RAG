@@ -72,7 +72,7 @@ def history_pairs() -> list[tuple[str, str]]:
 
 
 def step_dicts(steps: list[agent.ToolStep]) -> list[dict[str, Any]]:
-    return [{"name": s.name, "args": dict(s.args), "pages": list(s.pages)} for s in steps]
+    return [{"name": s.name, "args": dict(s.args), "pages": list(s.pages), "warning": s.warning} for s in steps]
 
 
 def submit(question: str) -> None:
@@ -127,6 +127,8 @@ def render_steps(steps: list[dict[str, Any]]) -> None:
             st.markdown(f"**{i}. search_guide:** {args['query']}")
         else:
             st.markdown(f"**{i}. {step.get('name', 'tool')}:** {args}")
+        if step.get("warning"):
+            st.warning(f"Step {i}: {step['warning']}")
 
 
 def render_assistant(message: dict[str, Any]) -> None:

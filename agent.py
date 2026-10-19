@@ -134,20 +134,24 @@ results do not answer it, say so plainly, together with whatever relevant facts 
 8. Entity check: before answering from search results, verify that the league, season and names in the \
 passages match what was asked. If they differ, say the guide does not contain it and what it does contain; \
 never substitute a similar-looking entity (another season, league, team or player).
-9. State a number taken from search_guide text only when its meaning is unambiguous in the passage. If the \
+9. Never infer a superlative or ranking (leader, most, best, first, highest) from partial evidence such as \
+single-game highs, a few passages or a partial list. If the guide does not state it, say so and give the facts \
+you found.
+10. State a number taken from search_guide text only when its meaning is unambiguous in the passage. If the \
 passage is a flattened table row without clear column labels, say what the passage shows and that the column \
 meaning is uncertain.
-10. Search queries may contain only terms from the user's question (plus generic words such as "record" or \
-"All-NBA"); never put an answer, name or number you guessed into a query.
-11. search_guide expands acronyms itself (MVP, ROTY, team abbreviations, stat columns; see ACRONYMS), so pass \
+11. Terms in a search query may come only from the user's question, the conversation, or earlier tool output in \
+this run (plus generic words such as "record" or "All-NBA"), never from your own memory; never put an answer, name \
+or number you guessed into a query.
+12. search_guide expands acronyms itself (MVP, ROTY, team abbreviations, stat columns; see ACRONYMS), so pass \
 the user's own words unchanged. Its "Searched:" line shows the expansion, which comes from a fixed list, not \
 from guesses.
-12. Use names exactly as they appear in tool output. Do not add nicknames or details from memory: write \
+13. Use names exactly as they appear in tool output. Do not add nicknames or details from memory: write \
 "New York", not "Knicks", unless a tool returned "Knicks". When grammar needs a noun, add a neutral one such as \
 "team" ("the New York team won"), never a nickname.
-13. Seasons are written like "1996-97". If the user gives a single year such as 1997, assume the season that \
+14. Seasons are written like "1996-97". If the user gives a single year such as 1997, assume the season that \
 ended in that year (1996-97), state that assumption in your answer, and mention the alternative (1997-98).
-14. Be concise.
+15. Be concise.
 
 ACRONYMS (as users type them = as the guide prints them; use the printed names in SQL)
 {acronyms}
@@ -196,6 +200,8 @@ class ToolStep:
     args: dict[str, Any]
     output_preview: str
     pages: list[int] = field(default_factory=list)
+    warning: str = ""
+    """Set when a search query uses terms not found in the question, history or earlier tool output."""
 
 
 @dataclass(frozen=True)
@@ -612,29 +618,86 @@ def tool_output_pages(output: str) -> list[int]:
     return list(dict.fromkeys(pages))
 
 
-def _collect_steps(messages: list[BaseMessage]) -> list[ToolStep]:
+_QUERY_TERM_RE = re.compile(r'"[^"]+"|\u201c[^\u201d]+\u201d|\b\d{4}-\d{2}\b|\b\d+\b|\b[A-Z][\w\'\u2019.-]*')
+_GENERIC_QUERY_WORDS = frozenset({
+    "nba", "finals", "final", "all-star", "all-nba", "playoffs", "playoff", "season", "regular", "award", "awards",
+    "team", "teams", "game", "games", "series", "record", "records", "history", "guide", "list", "winner", "winners",
+    "who", "what", "which", "when", "how", "the", "most", "leader", "leaders", "stats", "statistics",
+})
+
+
+def _year_variants(term: str) -> set[str]:
+    """Year forms that make a number "present": 1996-97 <-> 1997 / 1996, 2021 <-> 2020-21."""
+    if m := re.fullmatch(r"(\d{4})-(\d{2})", term):
+        start = int(m.group(1))
+        return {term, str(start), str(start + 1)}
+    if re.fullmatch(r"\d{4}", term):
+        year = int(term)
+        return {term, f"{year - 1}-{year % 100:02d}", f"{year}-{(year + 1) % 100:02d}"}
+    return {term}
+
+
+def query_provenance_warning(query: str, allowed_text: str) -> str:
+    """Names the capitalized words, numbers and quoted phrases of `query` that `allowed_text` does not contain.
+
+    allowed_text is the question, the history and earlier tool output; the question's acronym expansion, the
+    words of award and stat names in acronyms.yaml (not team names) and a few generic words count as allowed.
+    Returns "" when all are present.
+    """
+    haystack = allowed_text.lower()
+    allowed_words = _GENERIC_QUERY_WORDS | {
+        w.lower() for e in acronyms.load_entries() if e.category != "teams" for w in e.canonical.split()
+    }
+    missing: list[str] = []
+    for raw in _QUERY_TERM_RE.findall(query):
+        term = raw.strip("\"\u201c\u201d.").strip()
+        if not term or term.lower() in allowed_words:
+            continue
+        if any(v.lower() in haystack for v in _year_variants(term)):
+            continue
+        missing.append(term)
+    if not missing:
+        return ""
+    return "search query terms not in the question, history or earlier tool output: " + ", ".join(
+        dict.fromkeys(missing)
+    )
+
+
+def _collect_steps(messages: list[BaseMessage], context: str = "") -> list[ToolStep]:
     """One ToolStep per tool result, in the order the model made the calls.
 
     Refusals are written before the allowed calls of the same reply run, so each reply's results are
-    re-sorted into its tool_calls order.
+    re-sorted into its tool_calls order. `context` (question and history) is used for the search-query
+    provenance warning: a query may use terms from it and from tool output of EARLIER rounds only.
     """
     calls: dict[str, tuple[str, dict[str, Any]]] = {}
     order: dict[str, int] = {}
+    round_of: dict[str, int] = {}
+    rounds = 0
     for msg in messages:
-        if isinstance(msg, AIMessage):
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            rounds += 1
             for call in msg.tool_calls:
                 calls[call["id"] or ""] = (call["name"], dict(call["args"]))
                 order[call["id"] or ""] = len(order)
+                round_of[call["id"] or ""] = rounds
     results = sorted(
         (m for m in messages if isinstance(m, ToolMessage)),
         key=lambda m: order.get(m.tool_call_id, len(order)),
     )
+    expanded_context = context + "\n" + (acronyms.expand_query(context) or "")
     steps: list[ToolStep] = []
     for msg in results:
         name, args = calls.get(msg.tool_call_id, (msg.name or "unknown", {}))
         output = content_text(msg.content)
         preview = output if len(output) <= PREVIEW_CHARS else output[:PREVIEW_CHARS] + "..."
-        steps.append(ToolStep(name=name, args=args, output_preview=preview, pages=tool_output_pages(output)))
+        warning = ""
+        if name == SEARCH_TOOL and isinstance(args.get("query"), str):
+            this_round = round_of.get(msg.tool_call_id, rounds)
+            earlier = [content_text(m.content) for m in results if round_of.get(m.tool_call_id, rounds) < this_round]
+            warning = query_provenance_warning(args["query"], "\n".join([expanded_context, *earlier]))
+        steps.append(ToolStep(name=name, args=args, output_preview=preview, pages=tool_output_pages(output),
+                              warning=warning))
     return steps
 
 
@@ -664,6 +727,7 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
         return AgentResult(answer=OFFTOPIC_ANSWER, seconds=time.perf_counter() - start)
 
     inputs = [*history_messages(history), HumanMessage(content=question)]
+    context = "\n".join([question, *(f"{q}\n{a}" for q, a in (history or [])[-HISTORY_TURNS:])])
     limit = int((getattr(agent, "config", None) or {}).get("recursion_limit") or RECURSION_LIMIT)
     # Stream full state values (instead of invoke) so the latest state survives a GraphRecursionError.
     state: dict[str, Any] = {"messages": inputs}
@@ -674,7 +738,7 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
         logger.warning("Recursion limit (%d) reached: the model kept requesting tools.", limit)
         raise TooManyStepsError(
             f"The agent needed more than {limit} steps and was stopped. Try a more specific question.",
-            steps=_collect_steps(state["messages"][len(inputs):]),
+            steps=_collect_steps(state["messages"][len(inputs):], context),
         ) from e
     except Exception as e:
         mapped = map_llm_error(e)
@@ -692,7 +756,7 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
     if not answer:
         raise AgentError("The agent finished without an answer.")
 
-    steps = _collect_steps(new_messages)
+    steps = _collect_steps(new_messages, context)
     pages = cited_pages(answer)
     usage = [m.usage_metadata for m in new_messages if isinstance(m, AIMessage) and m.usage_metadata]
     retrieved = {p for step in steps for p in step.pages}

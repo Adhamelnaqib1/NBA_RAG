@@ -42,6 +42,8 @@ def format_steps(steps: list[ToolStep]) -> list[str]:
     for i, step in enumerate(steps, start=1):
         arg = step.args.get("sql") or step.args.get("query") or step.args
         lines.append(f"[{i}] {step.name}: {arg}")
+        if step.warning:
+            lines.append(f"    WARNING: {step.warning}")
         lines.append("    " + step.output_preview.replace("\n", "\n    "))
     return lines
 

@@ -193,15 +193,20 @@ automatically.
    relevant facts the passages contain; don't repeat or reword the search.
 8. **Entity check**: confirm the league, season and names in the passages match the question; never substitute a
    similar-looking entity.
-9. **Numbers from search text** only when their meaning is unambiguous; flattened table rows without labels are
+9. **No inferred superlatives**: never conclude a leader, "most", best, first or highest from partial evidence
+   (single-game highs, a few passages, a partial list); if the guide does not state it, say so and give the facts.
+10. **Numbers from search text** only when their meaning is unambiguous; flattened table rows without labels are
    reported as uncertain.
-10. **No guessed answers in search queries**.
-11. **Pass the user's own words to `search_guide`**: the tool expands acronyms itself (from `acronyms.yaml`, not
+11. **Search-query provenance**: query terms may come from the question, the conversation or earlier tool output
+    in this run, never from the model's memory. A query that uses other capitalized words, numbers or quoted phrases
+    gets a **provenance warning** on its step, shown in "How I got this" and in `main.py -v` (warnings never block;
+    a city added for a nickname, e.g. "Chicago" for "Bulls", is flagged too).
+12. **Pass the user's own words to `search_guide`**: the tool expands acronyms itself (from `acronyms.yaml`, not
     from guesses), and its "Searched:" line shows the expansion.
-12. **Names exactly as tool output gives them** (no nicknames from memory; a neutral noun such as "team" is allowed).
-13. **Season assumption**: "1997" means the season that ended in 1997 (1996-97); the answer states the assumption
+13. **Names exactly as tool output gives them** (no nicknames from memory; a neutral noun such as "team" is allowed).
+14. **Season assumption**: "1997" means the season that ended in 1997 (1996-97); the answer states the assumption
     and mentions 1997-98.
-14. Be concise. The prompt also tells the model its tool budgets and never to mention budgets or limits to the user,
+15. Be concise. The prompt also tells the model its tool budgets and never to mention budgets or limits to the user,
     and it contains a generated **ACRONYMS** line ("MVP = Most Valuable Player; GSW = Golden State; …", awards and
     teams) so SQL can use the printed names.
 
@@ -230,8 +235,8 @@ expansion happens inside `tools.search()`.
 
 | `ACRONYM_MODE` | Behavior | Trade-off |
 |---|---|---|
-| `both` (default) | original and expanded query embedded in **one** `embed_texts` call, both searched, merged by reciprocal rank fusion (k = 60), de-duplicated by chunk id, top `SEARCH_K` | always covers both wordings; a second Chroma query whenever an acronym is present, and fusion can push a lower-ranked chunk of the original query out of the top k |
-| `fallback` | search the original; only if no returned passage mentions a matched term (case- and whitespace-insensitive) also search the expanded query and merge | cheapest when the original already finds the term; an extra embedding call when it doesn't |
+| `both` | original and expanded query embedded in **one** `embed_texts` call, both searched, merged by reciprocal rank fusion (k = 60), de-duplicated by chunk id, top `SEARCH_K` | always covers both wordings; a second Chroma query whenever an acronym is present, and fusion can push a lower-ranked chunk of the original query out of the top k |
+| `fallback` (default) | search the original; only if no returned passage mentions a matched term (case- and whitespace-insensitive) also search the expanded query and merge | cheapest when the original already finds the term; an extra embedding call when it doesn't |
 | `off` | no expansion | — |
 
 Without a match exactly one query is made in every mode.
@@ -362,7 +367,7 @@ All settings are read by `config.py` from the environment (and `.env`, loaded at
 | `TOTAL_TOOL_BUDGET` | tool call attempts per question (integer ≥ 1) | `4` | no |
 | `SEARCH_K` | passages per search when the model doesn't pass `k` (1-10) | `8` | no |
 | `OFFTOPIC_GUARD` | `1` on, `0` off | `1` | no |
-| `ACRONYM_MODE` | `both`, `fallback` or `off` (see *Acronym expansion*) | `both` | no |
+| `ACRONYM_MODE` | `fallback`, `both` or `off` (see *Acronym expansion*) | `fallback` | no |
 | `APP_MAX_QUESTIONS` | questions per Streamlit session (not reset by *Clear chat*) | `30` | no |
 | `DATA_DIR` | ChromaDB directory used by the tools | `./data` | no |
 | `DB_PATH` | SQLite file used by the tools and CLI | `./nba_stats.db` | no |
@@ -463,7 +468,7 @@ between runs):
 All answers matched ground truth checked against the SQL tables or the PDF page text. Earlier runs, before the budgets: Boston 7.8 s / 3 model calls, 2026
 Finals 38.4 s, 1997 first team 8.4 s.
 
-**Acronym live checks** (`ACRONYM_MODE=both`, Nemotron, 13 LLM calls in total; these runs used `SEARCH_BUDGET=2`
+**Acronym live checks** (run with `ACRONYM_MODE=both`, the default at the time; Nemotron, 13 LLM calls in total; these runs used `SEARCH_BUDGET=2`
 from the local environment, so up to two searches ran):
 
 | Question | Tools | Tool calls | Model calls | Latency | Verified pages | Answer (checked against the PDF text) |
@@ -486,8 +491,8 @@ fusion pushed it out). `fallback` never needed its second search for these queri
 - **Rate limits.** The NVIDIA endpoint is rate-limited; a 429 is retried 5 times and then shown as a quota message.
   Wait and try again.
 - **Slow answers.** A question takes several seconds to about a minute. With retries, a stalled model call can
-  wait `LLM_TIMEOUT_SECONDS` (default 120) several times before the timeout message appears; lower it if the UI
-  waits too long.
+  wait `LLM_TIMEOUT_SECONDS` (default 120) several times before the timeout message appears. Set
+  `LLM_TIMEOUT_SECONDS=60` if a stalled model call makes the UI wait too long.
 - **Out-of-guide questions** get "not in the guide" answers; obvious non-NBA questions are caught by the off-topic
   guard without a model call.
 - **Only four tables are loaded**: `draft_2026`, `all_nba_by_player`, `nba_finals`, `all_nba_by_season`. Other stats

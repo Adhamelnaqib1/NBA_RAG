@@ -174,18 +174,19 @@ def get_search_k() -> int:
 
 
 ACRONYM_MODES: tuple[str, ...] = ("both", "fallback", "off")
+DEFAULT_ACRONYM_MODE: str = "fallback"
 
 
 def get_acronym_mode() -> str:
     """ACRONYM_MODE: how search_guide uses acronym expansion (acronyms.yaml).
 
-    both (default): search the original and the expanded query together and merge; fallback: search the
-    expanded query only when no passage mentions the matched term; off: no expansion.
+    fallback (default): search the expanded query only when no passage of the original search mentions the
+    matched term; both: search the original and the expanded query together and merge; off: no expansion.
 
     Raises:
         ValueError: For any other value.
     """
-    mode = os.getenv("ACRONYM_MODE", "").strip().lower() or "both"
+    mode = os.getenv("ACRONYM_MODE", "").strip().lower() or DEFAULT_ACRONYM_MODE
     if mode not in ACRONYM_MODES:
         raise ValueError(f"ACRONYM_MODE must be one of {', '.join(ACRONYM_MODES)}; got {mode!r}.")
     return mode
