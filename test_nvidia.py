@@ -328,3 +328,16 @@ class TestPayloadDirect:
         assert agent.llm_label() == "gemini / gemini-2.5-flash"
         monkeypatch.setenv("LLM_PROVIDER", "bogus")
         assert agent.llm_label() == "configured / unknown"
+
+
+def test_persistent_timeout_becomes_friendly_timeout_error() -> None:
+    class AlwaysTimesOut(FakeSession):
+        def post(self, *args: Any, **kwargs: Any) -> requests.Response:
+            self.payloads.append(kwargs["json"])
+            raise requests.ReadTimeout("HTTPSConnectionPool: Read timed out. (read timeout=120.0)")
+
+    session = AlwaysTimesOut([])
+    with pytest.raises(agent.LLMTimeoutError, match="nvidia model did not answer in time") as exc_info:
+        ask(build_agent(llm=nvidia_llm(session), model_retries=2), "q")
+    assert len(session.payloads) == 3
+    assert "HTTPSConnectionPool" not in str(exc_info.value)

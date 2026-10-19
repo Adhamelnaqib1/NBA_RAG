@@ -12,6 +12,7 @@ langgraph
 pdfplumber
 pandas
 pyyaml
+streamlit
 tabulate
 pytest
 ruff

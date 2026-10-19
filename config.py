@@ -35,6 +35,7 @@ DEFAULT_LLM_MODELS: dict[str, str] = {
 }
 LLM_API_KEY_VARS: dict[str, str] = {"nvidia": "NVIDIA_API_KEY", "gemini": "GEMINI_LLM_API_KEY"}
 DEFAULT_LLM_TIMEOUT_SECONDS: float = 120.0
+DEFAULT_APP_MAX_QUESTIONS: int = 30
 
 DATA_DIR: Path = Path(os.getenv("DATA_DIR", "./data"))
 DB_PATH: Path = Path(os.getenv("DB_PATH", "./nba_stats.db"))
@@ -142,6 +143,11 @@ def get_llm_max_tokens() -> int | None:
     so the chat library's default applies."""
     value = _positive_number("LLM_MAX_TOKENS", None, int)
     return None if value is None else int(value)
+
+
+def get_app_max_questions() -> int:
+    """APP_MAX_QUESTIONS (default 30): questions one Streamlit session may ask, to protect the LLM key."""
+    return int(_positive_number("APP_MAX_QUESTIONS", DEFAULT_APP_MAX_QUESTIONS, int))
 
 
 def get_llm_timeout_seconds() -> float:

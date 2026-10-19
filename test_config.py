@@ -188,3 +188,17 @@ class TestEnvIsolation:
         assert config.LLM_MODEL == config.DEFAULT_LLM_MODELS["nvidia"]
         assert config.DB_PATH == Path("./nba_stats.db")
         assert config.get_llm_api_key(required=False) == ""
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(None, 30), ("5", 5), (" 100 ", 100)])
+def test_app_max_questions(monkeypatch: pytest.MonkeyPatch, raw: str | None, expected: int) -> None:
+    if raw is not None:
+        monkeypatch.setenv("APP_MAX_QUESTIONS", raw)
+    assert config.get_app_max_questions() == expected
+
+
+@pytest.mark.parametrize("raw", ["0", "-3", "lots"])
+def test_app_max_questions_invalid(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+    monkeypatch.setenv("APP_MAX_QUESTIONS", raw)
+    with pytest.raises(ValueError, match="APP_MAX_QUESTIONS must be a positive int"):
+        config.get_app_max_questions()

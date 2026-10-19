@@ -139,6 +139,10 @@ class TooManyStepsError(AgentError):
         self.steps: list[ToolStep] = steps or []
 
 
+class LLMTimeoutError(AgentError):
+    """The model did not answer within LLM_TIMEOUT_SECONDS (after retries)."""
+
+
 class ConfigError(AgentError):
     """The LLM configuration is wrong: missing or rejected key, unknown model or bad setting."""
 
@@ -426,8 +430,12 @@ def llm_label() -> str:
 
 
 def map_llm_error(exc: Exception) -> AgentError | None:
-    """Translates a provider failure into QuotaExceededError or ConfigError; None if it is something else."""
+    """Translates a provider failure into LLMTimeoutError, QuotaExceededError or ConfigError; None otherwise."""
     provider, model, key_var = _llm_identity()
+    if any(isinstance(e, (requests.Timeout, TimeoutError)) for e in _exception_chain(exc)):
+        return LLMTimeoutError(
+            f"The {provider} model did not answer in time. Try again, or ask a narrower question."
+        )
     if _is_quota_error(exc):
         return QuotaExceededError(
             f"The {provider} LLM quota or rate limit was hit (HTTP 429). Wait a minute and try again."
@@ -499,6 +507,7 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
     Raises:
         QuotaExceededError: On HTTP 429/402 / RESOURCE_EXHAUSTED from the model provider.
         ConfigError: If the provider rejects the key (401/403) or does not know the model (404).
+        LLMTimeoutError: If the model does not answer within LLM_TIMEOUT_SECONDS (after retries).
         TooManyStepsError: If the agent needs more than RECURSION_LIMIT graph steps (carries the steps so far).
         AgentError: If the agent finishes without a text answer.
     """
