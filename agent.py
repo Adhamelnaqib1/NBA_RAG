@@ -104,7 +104,8 @@ partial information.
 7. Search queries may contain only terms from the user's question (plus generic words such as "record" or \
 "All-NBA"); never put an answer, name or number you guessed into a query.
 8. Use names exactly as they appear in tool output. Do not add nicknames or details from memory: write \
-"New York", not "Knicks", unless a tool returned "Knicks".
+"New York", not "Knicks", unless a tool returned "Knicks". When grammar needs a noun, add a neutral one such as \
+"team" ("the New York team won"), never a nickname.
 9. Seasons are written like "1996-97". If the user gives a single year such as 1997, assume the season that \
 ended in that year (1996-97), state that assumption in your answer, and mention the alternative (1997-98).
 10. Be concise.
@@ -234,8 +235,9 @@ class ForceAnswerAfterToolLimit(AgentMiddleware[AgentState[Any], Any, Any]):
 def make_llm() -> BaseChatModel:
     """Chat model for LLM_PROVIDER: ChatNVIDIA (NVIDIA_API_KEY) or ChatGoogleGenerativeAI (GEMINI_LLM_API_KEY).
 
-    temperature is passed only when LLM_TEMPERATURE is set; LLM_MAX_TOKENS and LLM_TIMEOUT_SECONDS apply to
-    both providers. ChatNVIDIA has no retry setting, so build_agent() adds ModelRetryMiddleware for it.
+    temperature and max tokens are passed only when LLM_TEMPERATURE / LLM_MAX_TOKENS are set, so the library
+    defaults apply otherwise (ChatNVIDIA uses 8192 output tokens for Nemotron Super VL). LLM_TIMEOUT_SECONDS
+    applies to both providers. ChatNVIDIA has no retry setting, so build_agent() adds ModelRetryMiddleware for it.
 
     Raises:
         MissingConfigError: If the provider is unknown, its key is missing, or a numeric setting is invalid.
@@ -252,17 +254,12 @@ def make_llm() -> BaseChatModel:
     options: dict[str, Any] = {} if temperature is None else {"temperature": temperature}
 
     if provider == "nvidia":
-        return ChatNVIDIA(
-            model=model,
-            api_key=api_key,
-            max_completion_tokens=max_tokens,
-            timeout=timeout,
-            usage_telemetry_enabled=False,
-            **options,
-        )
-    return ChatGoogleGenerativeAI(
-        model=model, api_key=api_key, max_retries=5, max_tokens=max_tokens, timeout=timeout, **options
-    )
+        if max_tokens is not None:
+            options["max_completion_tokens"] = max_tokens
+        return ChatNVIDIA(model=model, api_key=api_key, timeout=timeout, usage_telemetry_enabled=False, **options)
+    if max_tokens is not None:
+        options["max_tokens"] = max_tokens
+    return ChatGoogleGenerativeAI(model=model, api_key=api_key, max_retries=5, timeout=timeout, **options)
 
 
 def build_agent(

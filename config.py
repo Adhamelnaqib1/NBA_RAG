@@ -34,7 +34,6 @@ DEFAULT_LLM_MODELS: dict[str, str] = {
     "gemini": "gemini-2.5-flash",
 }
 LLM_API_KEY_VARS: dict[str, str] = {"nvidia": "NVIDIA_API_KEY", "gemini": "GEMINI_LLM_API_KEY"}
-DEFAULT_LLM_MAX_TOKENS: int = 4096
 DEFAULT_LLM_TIMEOUT_SECONDS: float = 120.0
 
 DATA_DIR: Path = Path(os.getenv("DATA_DIR", "./data"))
@@ -125,10 +124,10 @@ def get_llm_api_key(required: bool = True) -> str:
     return ""
 
 
-def _positive_number(var: str, default: float, cast: type[int | float]) -> Any:
+def _positive_number(var: str, default: float | None, cast: type[int | float]) -> Any:
     raw = os.getenv(var, "").strip()
     if not raw:
-        return cast(default)
+        return None if default is None else cast(default)
     try:
         value = cast(raw)
     except ValueError as e:
@@ -138,9 +137,11 @@ def _positive_number(var: str, default: float, cast: type[int | float]) -> Any:
     return value
 
 
-def get_llm_max_tokens() -> int:
-    """LLM_MAX_TOKENS (default 4096): output cap per model call; reasoning tokens may count toward it."""
-    return int(_positive_number("LLM_MAX_TOKENS", DEFAULT_LLM_MAX_TOKENS, int))
+def get_llm_max_tokens() -> int | None:
+    """LLM_MAX_TOKENS: output cap per model call (reasoning tokens may count toward it), or None when unset
+    so the chat library's default applies."""
+    value = _positive_number("LLM_MAX_TOKENS", None, int)
+    return None if value is None else int(value)
 
 
 def get_llm_timeout_seconds() -> float:

@@ -120,14 +120,15 @@ class TestConfig:
     @pytest.mark.parametrize(
         ("var", "getter", "raw", "expected"),
         [
-            ("LLM_MAX_TOKENS", "get_llm_max_tokens", None, 4096),
+            ("LLM_MAX_TOKENS", "get_llm_max_tokens", None, None),
+            ("LLM_MAX_TOKENS", "get_llm_max_tokens", "  ", None),
             ("LLM_MAX_TOKENS", "get_llm_max_tokens", " 8192 ", 8192),
             ("LLM_TIMEOUT_SECONDS", "get_llm_timeout_seconds", None, 120.0),
             ("LLM_TIMEOUT_SECONDS", "get_llm_timeout_seconds", "45.5", 45.5),
         ],
     )
     def test_llm_limits(
-        self, monkeypatch: pytest.MonkeyPatch, var: str, getter: str, raw: str | None, expected: float
+        self, monkeypatch: pytest.MonkeyPatch, var: str, getter: str, raw: str | None, expected: float | None
     ) -> None:
         if raw is not None:
             monkeypatch.setenv(var, raw)

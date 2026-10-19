@@ -20,9 +20,9 @@ questions:
   - id: n2
     category: narrative
     question: "Which team won the 2025-26 NBA championship, and who was its head coach?"
-    expected_pages: [6]
+    expected_pages: [6, 180]
     verified: true
-    note: "2025-26 Review: Regular Season, champion roster and coaches header"
+    note: "2025-26 Review: Regular Season, champion roster and coaches header (p. 6); nba_finals table p. 180 is also a valid source"
 
   - id: n3
     category: narrative
