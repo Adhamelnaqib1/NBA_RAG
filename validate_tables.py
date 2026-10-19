@@ -19,7 +19,12 @@ from typing import Any
 import pandas as pd  # type: ignore[import-untyped]
 import pdfplumber
 
-from extract_tables import ExtractedTable, SkippedLine, load_tables_from_spec
+from extract_tables import (
+    ExtractedTable,
+    SkippedLine,
+    load_tables_from_spec,
+    normalize_heading,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +33,7 @@ SOURCE_PAGES: dict[str, list[int]] = {
     "all_nba_by_player": [111, 112],
     "nba_finals": [179, 180],
     "all_nba_by_season": [104, 105, 106, 107, 108, 109],
+    "awards": [100, 101, 102, 103],
 }
 
 # Patterns over raw page text, independent of the extractor's bboxes, x-splits and line clustering.
@@ -37,6 +43,7 @@ FINALS_SOURCE_RE = re.compile(r"^(\d{4}) ")
 
 # A skipped line that matches one of these looked like data, so skipping it lost a row.
 DATA_LIKE: dict[str, re.Pattern[str]] = {
+    "awards": re.compile(r"\b\d{4}(?:-\d{2})?\s+—\s+|\(tie\)|, [A-Z]"),
     "draft_2026": re.compile(r"^\d+\.?\s"),
     "all_nba_by_player": re.compile(r"\d+ \d+ \d+ \d+$"),
     "nba_finals": re.compile(r"^\d{4}\b"),
@@ -52,6 +59,12 @@ class Check:
     name: str
     passed: bool
     detail: str = ""
+    warning: bool = False
+    """A warning is reported (WARN) but never blocks the load."""
+
+
+def status(c: Check) -> str:
+    return "WARN" if c.warning else "PASS" if c.passed else "FAIL"
 
 
 def _source_lines(source_text: dict[int, str], pages: list[int]) -> list[str]:
@@ -229,6 +242,133 @@ def cross_check_all_nba(by_season: pd.DataFrame, by_player: pd.DataFrame) -> lis
     ]
 
 
+CALENDAR_YEAR_AWARDS: frozenset[str] = frozenset({
+    "NBA Finals Most Valuable Player", "NBA Eastern Conference Finals MVP", "NBA Western Conference Finals MVP",
+    "NBA All-Star Game Most Valuable Player",
+})
+AWARD_GAPS: dict[str, dict[int, str]] = {
+    "NBA All-Star Game Most Valuable Player": {1999: "1999 is not in the guide's list (no All-Star Game that year)"},
+    "J. Walter Kennedy Citizenship Award": {2021: "printed as N/A (pandemic)", 2022: "printed as N/A (pandemic)"},
+}
+"""Years inside an award's first..last range that the guide does not list, with the reason."""
+AWARD_CO_RECIPIENTS: dict[tuple[str, str], str] = {
+    ("Bob Lanier Community Assist Award", "2019-20"): "five recipients printed as 'Player (Team)', no tie marker",
+}
+FINALS_MVP_NOT_CHAMPION: dict[int, str] = {
+    1969: "Jerry West, LA Lakers: the only Finals MVP from the losing team (Boston won 4-3, PDF p. 179)",
+}
+REGULAR_MVP = "NBA Most Valuable Player"
+FINALS_MVP = "NBA Finals Most Valuable Player"
+_PAREN_TEAM_TEXT = re.compile(r"[A-Z][\w.'’-]+(?: [A-Z][\w.'’-]+)* \([A-Z][A-Za-z.' ]+\)")
+
+
+def award_source_counts(source_text: dict[int, str], awards: list[str]) -> dict[str, int]:
+    """Rows each award should have, counted from the raw page text between its heading and the next one.
+
+    Every winner is printed once as "Player, Team" (one ", "; no team or player name in the guide contains a
+    comma) or as "Player (Team)"; "N/A (...)" years have neither. Counting these is independent of how the
+    flattened text interleaves the columns."""
+    headings = {a.upper(): a for a in awards}
+    counts: dict[str, int] = dict.fromkeys(awards, 0)
+    current: str | None = None
+    segments: dict[str, list[str]] = {a: [] for a in awards}
+    for page in SOURCE_PAGES["awards"]:
+        for line in source_text.get(page, "").splitlines():
+            printed = normalize_heading(line.strip())
+            if printed.upper() in headings:
+                current = headings[printed.upper()]
+            elif printed.isupper() and len(printed) > 12 and "—" not in printed:
+                current = None  # another all-caps heading (e.g. AWARD WINNERS)
+            elif current is not None:
+                segments[current].append(line)
+    for award, lines in segments.items():
+        text = "\n".join(lines)
+        counts[award] = text.count(", ") + len(_PAREN_TEAM_TEXT.findall(text))
+    return counts
+
+
+def check_awards(t: ExtractedTable, source_text: dict[int, str]) -> list[Check]:
+    """Awards: consecutive years (documented gaps), row counts vs page text, names, teams, heading/content match."""
+    name = "awards"
+    df = t.df
+    gaps_found: dict[str, list[int]] = {}
+    undocumented: list[str] = []
+    format_errors: list[str] = []
+    for award, group in df.groupby("award", sort=False):
+        years = sorted(set(group["season_end_year"]))
+        missing = sorted(set(range(years[0], years[-1] + 1)) - set(years))
+        if missing:
+            gaps_found[str(award)] = missing
+        documented = AWARD_GAPS.get(str(award), {})
+        undocumented += [f"{award} {y}" for y in missing if y not in documented]
+        calendar = award in CALENDAR_YEAR_AWARDS
+        bad = group[~group["season_label"].str.fullmatch(r"\d{4}" if calendar else r"\d{4}-\d{2}")]
+        format_errors += [f"{award}: {lbl}" for lbl in bad["season_label"]]
+    documented_gaps = {a: {y: AWARD_GAPS.get(a, {}).get(y, "UNDOCUMENTED") for y in ys} for a, ys in gaps_found.items()}
+
+    awards = list(dict.fromkeys(df["award"]))
+    source = award_source_counts(source_text, awards)
+    parsed = df.groupby("award", sort=False).size().to_dict()
+    count_mismatch = {a: (int(parsed.get(a, 0)), source[a]) for a in awards if int(parsed.get(a, 0)) != source[a]}
+
+    multi = df.groupby(["award", "season_label"]).filter(lambda g: len(g) > 1)
+    unexplained_multi = sorted({
+        f"{r.award} {r.season_label}" for r in multi.itertuples()
+        if not r.is_tie and (r.award, r.season_label) not in AWARD_CO_RECIPIENTS
+    })
+    name_shape = re.compile(r"^[A-Z][\w.'’-]*( [\w.'’-]+)+$")
+    team_shape = re.compile(r"^[A-Z][A-Za-z.'’/ -]*[A-Za-z.]$")
+    truncated = df[~df["player"].str.match(name_shape) | ~df["team"].str.match(team_shape)]
+    no_team = df[df["team"].str.strip() == ""]
+    heading_dupes = [a for a, n in df.drop_duplicates(["award", "source_page"]).groupby("award").size().items() if n > 1]
+    data_skips = [s for s in _data_like_skips(name, t.skipped) if not s.reason.startswith("not awarded")]
+    not_awarded = [f"p.{s.page}: {s.text}" for s in t.skipped if s.reason.startswith("not awarded")]
+
+    def rows(frame: pd.DataFrame) -> list[str]:
+        return [f"{r.award} {r.season_label}: {r.player}, {r.team}" for r in frame.itertuples()]
+
+    return [
+        _check(name, "years consecutive per award (gaps only where documented)", not undocumented,
+               f"gaps={documented_gaps} undocumented={undocumented}"),
+        _check(name, "rows == entry lines in page text, per award", not count_mismatch,
+               f"mismatches (parsed, source)={count_mismatch}; total rows={len(df)}"),
+        _check(name, "no truncated player or team names", truncated.empty, f"{rows(truncated)}"),
+        _check(name, "every row has a team", no_team.empty, f"{rows(no_team)}"),
+        _check(name, "several winners in a year only as ties or documented co-recipients", not unexplained_multi,
+               f"unexplained={unexplained_multi}; ties={int(df['is_tie'].sum())} rows; "
+               f"co-recipients={list(AWARD_CO_RECIPIENTS)}"),
+        _check(name, "heading matches content: calendar years only for Finals/All-Star MVPs, seasons otherwise",
+               not format_errors, f"{format_errors}"),
+        _check(name, "each award heading appears once", not heading_dupes, f"{heading_dupes}"),
+        _check(name, "no data-like line skipped", not data_skips,
+               f"{[(s.page, s.text) for s in data_skips]}; not awarded (documented)={not_awarded}"),
+    ]
+
+
+def cross_check_awards(awards: pd.DataFrame, finals: pd.DataFrame, by_season: pd.DataFrame) -> list[Check]:
+    """(a) Finals MVP team == nba_finals winner (documented exceptions only); (b) MVP on All-NBA First (warning)."""
+    fmvp = awards[awards["award"] == FINALS_MVP].merge(finals, left_on="season_end_year", right_on="year", how="left")
+    exceptions = {int(r.season_end_year): f"{r.player}, {r.team} vs winner {r.winner_team}"
+                  for r in fmvp.itertuples() if r.team != r.winner_team}
+    undocumented = sorted(set(exceptions) - set(FINALS_MVP_NOT_CHAMPION))
+    first = by_season[by_season["team_level"] == "First"]
+    first_keys = set(zip(first["season"], first["player_search"]))
+    mvp = awards[awards["award"] == REGULAR_MVP]
+    not_first: list[str] = []
+    for r in mvp.itertuples():
+        if (r.season_label, r.player_search) not in first_keys:
+            level = by_season[(by_season["season"] == r.season_label) & (by_season["player_search"] == r.player_search)]
+            where = f"{level['team_level'].iloc[0]} Team that season" if not level.empty else "not on any All-NBA team"
+            not_first.append(f"{r.season_label} {r.player}: printed on the {where}")
+    return [
+        _check("awards", "Finals MVP team == nba_finals winner (documented exceptions only)", not undocumented,
+               f"exceptions={exceptions}; documented={FINALS_MVP_NOT_CHAMPION}; undocumented={undocumented}"),
+        Check("awards", "regular-season MVP is on the All-NBA First Team that season", True,
+              f"{len(not_first)} exceptions: " + "; ".join(not_first) if not_first else "0 exceptions",
+              warning=bool(not_first)),
+    ]
+
+
 REQUIRED_COLUMNS: dict[str, list[str]] = {
     "draft_2026": ["pick", "player", "player_search", "drafting_team", "before_nba", "country", "source_page"],
     "all_nba_by_player": [
@@ -237,6 +377,7 @@ REQUIRED_COLUMNS: dict[str, list[str]] = {
     "all_nba_by_season": [
         "season", "season_end_year", "team_level", "player", "player_search", "team", "is_tie", "source_page",
     ],
+    "awards": ["award", "season_label", "season_end_year", "player", "player_search", "team", "is_tie", "source_page"],
     "nba_finals": [
         "year", "winner_team", "loser_team", "winner_games", "loser_games",
         "winner_best_record", "loser_best_record", "source_page",
@@ -248,6 +389,7 @@ CHECKS: dict[str, Callable[[ExtractedTable, dict[int, str]], list[Check]]] = {
     "all_nba_by_player": check_all_nba,
     "nba_finals": check_finals,
     "all_nba_by_season": check_all_nba_by_season,
+    "awards": check_awards,
 }
 
 
@@ -267,6 +409,8 @@ def run_checks(tables: dict[str, ExtractedTable], source_text: dict[int, str]) -
     usable = {r.table for r in results} - {r.table for r in results if r.name in _STRUCTURAL_CHECKS and not r.passed}
     if {"all_nba_by_season", "all_nba_by_player"} <= usable:
         results.extend(cross_check_all_nba(tables["all_nba_by_season"].df, tables["all_nba_by_player"].df))
+    if {"awards", "nba_finals", "all_nba_by_season"} <= usable:
+        results.extend(cross_check_awards(tables["awards"].df, tables["nba_finals"].df, tables["all_nba_by_season"].df))
     return results
 
 
@@ -283,6 +427,9 @@ def source_line_for(table: str, row: dict[str, Any], source_text: dict[int, str]
         match = [ln for ln in lines if re.search(rf"(^| ){re.escape(row['player'])} \d", ln)]
     elif table == "all_nba_by_season":
         match = [ln for ln in lines if f"{row['player']}, {row['team']}" in ln]
+    elif table == "awards":
+        match = [ln for ln in lines if f"{row['season_label']} — {row['player']}" in ln]
+        match = match or [ln for ln in lines if row["player"] in ln]
     else:
         match = [ln for ln in lines if ln.startswith(f"{row['year']} ")]
     return match[0] if match else "<no source line found>"
@@ -318,7 +465,7 @@ def main() -> None:
     results = run_checks(tables, source_text)
     print("\n=== Checks")
     for c in results:
-        print(f"{'PASS' if c.passed else 'FAIL'}  {c.table}: {c.name}  [{c.detail}]")
+        print(f"{status(c)}  {c.table}: {c.name}  [{c.detail}]")
 
     for name, t in tables.items():
         if t.df.empty:

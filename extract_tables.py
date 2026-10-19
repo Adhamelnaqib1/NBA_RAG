@@ -592,6 +592,105 @@ def _extract_season_blocks(
     return rows, skipped
 
 
+AWARD_ENTRY_RE = re.compile(r"^(?P<label>\d{4}(?:-\d{2})?)\s+—\s+(?P<rest>.+)$")
+# "Player, Team (tie)" or "Player (Team)" (the second form is used for co-recipients, e.g. Lanier 2019-20).
+AWARD_WINNER_RE = re.compile(
+    r"^(?P<player>[^,()]+?)(?:,\s+(?P<team>[A-Z][A-Za-z.'’/ -]*?)|\s+\((?P<pteam>[A-Z][A-Za-z.'’/ -]*)\))"
+    r"(?:\s+\((?P<tie>tie)\))?$"
+)
+_SMALL_WORDS = frozenset({"of", "the", "and", "for", "a", "an", "in", "on"})
+
+
+def normalize_heading(text: str) -> str:
+    """Joins letters split by the PDF text layer ("MOST V ALUABLE" -> "MOST VALUABLE") and collapses spaces."""
+    joined = re.sub(r"\b([A-Z]) (?=[A-Z]{2,}\b)", r"\1", text)
+    return " ".join(joined.split())
+
+
+def title_case_heading(text: str) -> str:
+    """"NBA FINALS MOST VALUABLE PLAYER" -> "NBA Finals Most Valuable Player"; keeps NBA, initials, hyphen parts."""
+    words = []
+    for i, word in enumerate(normalize_heading(text).split()):
+        if word in ("NBA", "MVP") or re.fullmatch(r"[A-Z]\.", word):
+            words.append(word)
+        elif i > 0 and word.lower() in _SMALL_WORDS:
+            words.append(word.lower())
+        else:
+            words.append("-".join(part.capitalize() for part in word.split("-")))
+    return " ".join(words)
+
+
+def award_end_year(label: str) -> int:
+    """"2025-26" -> 2026 (season awards); "2026" -> 2026 (calendar-year awards such as Finals MVP)."""
+    return season_end_year(label) if "-" in label else int(label)
+
+
+def _extract_award_blocks(
+    page: pdfplumber.page.Page,
+    page_num: int,
+    y_range: list[float],
+    min_gutter: float,
+    ignore_headings: list[str],
+    drop_line_patterns: list[str],
+) -> tuple[list[dict[str, Any]], list[SkippedLine]]:
+    """Award lists: each bold heading owns the band below it (down to the next heading); the band's entries are
+    read column by column, split at the band's own gutters, so a heading always stays with its list.
+
+    Entries are "YYYY-YY — Player, Team" (season awards) or "YYYY — Player, Team" (calendar-year awards); a line
+    without a year continues the entry above (a tie or co-recipient). "N/A (...)" years are skipped as not awarded.
+    """
+    y_min, y_max = y_range
+    words = [w for w in page.extract_words(extra_attrs=["fontname", "size"]) if y_min < w["top"] < y_max]
+    ignore = {normalize_heading(h) for h in ignore_headings}
+    drops = [re.compile(p) for p in drop_line_patterns]
+    lines = cluster_lines(words)
+    headings = [
+        line for line in lines
+        if all("Bold" in w["fontname"] for w in line) and min(w["size"] for w in line) >= 9.5
+        and normalize_heading(_line_text(line)) not in ignore
+    ]
+    rows: list[dict[str, Any]] = []
+    skipped: list[SkippedLine] = []
+    tops = [h[0]["top"] for h in headings] + [y_max]
+    heading_ids = {id(w) for h in headings for w in h}
+    for heading, (lo, hi) in zip(headings, pairwise(tops)):
+        award = title_case_heading(_line_text(heading))
+        band_lines = [
+            line for line in cluster_lines([w for w in words if lo < w["top"] < hi and id(w) not in heading_ids])
+            if not any(d.search(_line_text(line)) for d in drops)
+        ]
+        band = [w for line in band_lines for w in line]
+        bounds = [float("-inf"), *find_gutters(band, min_gutter), float("inf")]
+        for col_lo, col_hi in pairwise(bounds):
+            label: str | None = None
+            for line in cluster_lines([w for w in band if col_lo <= w["x0"] < col_hi]):
+                text = _line_text(line)
+                entry = AWARD_ENTRY_RE.match(text)
+                if entry:
+                    label, rest = entry.group("label"), entry.group("rest")
+                elif label is not None:
+                    rest = text
+                else:
+                    _skip(skipped, page_num, text, f"no year before this line in {award}")
+                    continue
+                if rest.startswith("N/A"):
+                    _skip(skipped, page_num, text, f"not awarded in {label}: {rest}")
+                    continue
+                winner = AWARD_WINNER_RE.match(rest)
+                if not winner:
+                    _skip(skipped, page_num, text, f"not 'Player, Team' in {award} {label}")
+                    continue
+                rows.append({
+                    "award": award,
+                    "season_label": label,
+                    "season_end_year": award_end_year(label),
+                    "player": winner.group("player").strip(),
+                    "team": (winner.group("team") or winner.group("pteam") or "").strip(),
+                    "is_tie": int(winner.group("tie") is not None),
+                })
+    return rows, skipped
+
+
 def load_and_clean_table(
     pdf_path: str | Path,
     table_name: str,
@@ -632,6 +731,15 @@ def load_and_clean_table(
                     columns=int(table_spec["columns_per_page"]),
                     y_range=page_entry.get("y_range", [0, float(page.height)]),
                     min_gutter=float(table_spec.get("min_gutter", 15)),
+                )
+            elif strategy == "award_blocks":
+                extracted, skipped = _extract_award_blocks(
+                    page,
+                    page_num,
+                    y_range=page_entry.get("y_range", [0, float(page.height)]),
+                    min_gutter=float(table_spec.get("min_gutter", 12)),
+                    ignore_headings=list(table_spec.get("ignore_headings", [])),
+                    drop_line_patterns=list(table_spec.get("drop_line_patterns", [])),
                 )
             elif strategy == "line_regex":
                 pattern = table_spec["line_pattern"]
@@ -879,7 +987,7 @@ def main() -> None:
             results = load_validated(pdf_path=args.pdf, spec_path=args.spec, db_path=args.db_path)
 
         for c in results:
-            print(f"{'PASS' if c.passed else 'FAIL'}  {c.table}: {c.name}  [{c.detail}]")
+            print(f"{'WARN' if c.warning else 'PASS' if c.passed else 'FAIL'}  {c.table}: {c.name}  [{c.detail}]")
         if not all(c.passed for c in results):
             sys.exit("Validation failed; database was not written.")
         if args.dry_run:

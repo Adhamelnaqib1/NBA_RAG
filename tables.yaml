@@ -116,3 +116,27 @@ tables:
       strip_whitespace: true
       search_columns:
         player: player_search
+
+  awards:
+    description: "One row per award winner per year for the guide's award lists (PDF pp. 100-103). award is the printed heading in title case, stored exactly as: 'NBA Most Valuable Player', 'NBA Coach of the Year', 'NBA Rookie of the Year', 'NBA Most Improved Player', 'NBA Defensive Player of the Year', 'NBA Sixth Man of the Year', 'NBA Clutch Player of the Year', 'NBA Hustle Award', 'NBA Basketball Executive of the Year', 'NBA Finals Most Valuable Player', 'NBA Eastern Conference Finals MVP', 'NBA Western Conference Finals MVP', 'NBA All-Star Game Most Valuable Player', 'NBA Sportsmanship Award', 'Twyman-Stokes Teammate of the Year Award', 'Bob Lanier Community Assist Award', 'Kareem Abdul-Jabbar Social Justice Champion Award', 'J. Walter Kennedy Citizenship Award'. Use award = '<exact name>' (LIKE '%Most Valuable Player%' also matches the Finals and All-Star MVPs). The ACRONYMS list maps MVP, FMVP, ROY/ROTY, COY/COTY, DPOY, 6MOY, MIP, CPOY and All-Star MVP to these names (without the 'NBA ' prefix). season_label is as printed: season awards use '2025-26', while the Finals, conference finals and All-Star Game MVPs use calendar years such as '2026'. season_end_year is the ending year (2025-26 -> 2026; 2026 -> 2026). is_tie is 1 for entries the guide marks as a tie; a year can have several rows (ties, and five co-recipients of the Bob Lanier award in 2019-20). team is the team as printed (city name). Match player names with LIKE on player_search (lowercase ASCII, straight apostrophes, no dots)."
+    pages:
+      - {page: 100, y_range: [20, 625]}
+      - {page: 101, y_range: [20, 625]}
+      - {page: 102, y_range: [20, 625]}
+      - {page: 103, y_range: [20, 625]}
+    strategy: "award_blocks"
+    min_gutter: 12
+    ignore_headings: ["AWARD WINNERS", "INDIVIDUAL AWARDS"]
+    drop_line_patterns: ["receives The ", "^Administered and selected by"]
+    columns:
+      award: TEXT
+      season_label: TEXT
+      season_end_year: INTEGER
+      player: TEXT
+      player_search: TEXT
+      team: TEXT
+      is_tie: INTEGER
+    cleanup:
+      strip_whitespace: true
+      search_columns:
+        player: player_search
