@@ -167,9 +167,17 @@ class TestMain:
         monkeypatch.setattr("builtins.input", lambda prompt: "n")
         assert eval_retrieval.main([]) == 1
 
-    def test_only_verified_and_no_rerun_change_the_plan(self, capsys: pytest.CaptureFixture[str]) -> None:
-        assert eval_retrieval.main(["--check", "--only-verified", "--no-rerun"]) == 0
-        assert "5 questions (narrative=0, numeric=5, mixed=0); 5-5 embedding calls" in capsys.readouterr().out
+    def test_only_verified_and_no_rerun_change_the_plan(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / "q.yaml"
+        path.write_text(
+            "questions:\n"
+            "  - {id: a, category: numeric, question: q, expected_pages: [1], verified: true}\n"
+            "  - {id: b, category: mixed, question: q, expected_pages: [1], verified: false}\n"
+        )
+        assert eval_retrieval.main(["--check", "--only-verified", "--no-rerun", "--questions", str(path)]) == 0
+        assert "1 questions (narrative=0, numeric=1, mixed=0); 1-1 embedding calls" in capsys.readouterr().out
 
     def test_live_run_uses_search_and_prints_report(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

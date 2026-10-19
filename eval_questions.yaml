@@ -4,9 +4,9 @@
 # source_page (the printed page number is one lower). A question counts as a hit@k if ANY expected page
 # appears among the top-k retrieved chunks.
 #
-# Candidate pages came from a local text search of the PDF (no API calls) and are NOT verified:
-# check each one and set `verified: true`. Pages 52, 111-112 and 179-180 are the validated pilot-table
-# pages from STEP 2. No answers are recorded here on purpose.
+# Candidate pages came from a local text search of the PDF (no API calls); all were then checked against
+# the PDF by hand (verified: true). Pages 52, 111-112 and 179-180 are the validated pilot-table pages.
+# No answers are recorded here on purpose.
 
 questions:
   # --- narrative: answered from the guide's text (search_guide) ---
@@ -14,35 +14,35 @@ questions:
     category: narrative
     question: "What is the record for most points by one player in a single regular-season game, and who set it?"
     expected_pages: [199]
-    verified: false
+    verified: true
     note: "Records: Regular Season, 'Most points, game' list"
 
   - id: n2
     category: narrative
     question: "Which team won the 2025-26 NBA championship, and who was its head coach?"
     expected_pages: [6]
-    verified: false
+    verified: true
     note: "2025-26 Review: Regular Season, champion roster and coaches header"
 
   - id: n3
     category: narrative
     question: "Who was named NBA Finals MVP in 2026?"
     expected_pages: [102]
-    verified: false
+    verified: true
     note: "Award Winners, 'NBA Finals Most Valuable Player' list"
 
   - id: n4
     category: narrative
     question: "Who won the NBA Most Valuable Player award for the 2025-26 season?"
     expected_pages: [100, 99]
-    verified: false
+    verified: true
     note: "Award Winners, MVP list (p. 100); photo caption (p. 99)"
 
   - id: n5
     category: narrative
     question: "In what year was Red Auerbach enshrined in the Basketball Hall of Fame as a coach?"
     expected_pages: [189]
-    verified: false
+    verified: true
     note: "Hall of Fame list of enshrinees, coaches"
 
   # --- numeric: answerable from the loaded SQLite tables (run_sql) ---
@@ -70,9 +70,9 @@ questions:
   - id: t4
     category: numeric
     question: "How many NBA Finals has Boston won?"
-    expected_pages: [179, 180]
+    expected_pages: [179, 180, 187]
     verified: true
-    note: "nba_finals source pages"
+    note: "nba_finals source pages + NBA Finals all-time team records p. 187; best answered via SQL over nba_finals"
 
   - id: t5
     category: numeric
@@ -86,33 +86,33 @@ questions:
     category: mixed
     question: "Who won the 2026 NBA Finals, in how many games, and who was the Finals MVP?"
     expected_pages: [180, 102]
-    verified: false
-    note: "nba_finals p. 180 (validated) + Finals MVP list p. 102 (unverified)"
+    verified: true
+    note: "nba_finals p. 180 + Finals MVP list p. 102"
 
   - id: m2
     category: mixed
     question: "Which team drafted the No. 1 pick in 2026, and what was that team's 2025-26 regular-season record?"
     expected_pages: [52, 6]
-    verified: false
-    note: "draft_2026 p. 52 (validated) + division standings p. 6 (unverified)"
+    verified: true
+    note: "draft_2026 p. 52 + division standings p. 6"
 
   - id: m3
     category: mixed
     question: "How many All-NBA selections does Shai Gilgeous-Alexander have, and how many MVP awards has he won?"
     expected_pages: [111, 100]
-    verified: false
-    note: "all_nba_by_player p. 111 (validated) + MVP list p. 100 (unverified)"
+    verified: true
+    note: "all_nba_by_player p. 111 + MVP list p. 100"
 
   - id: m4
     category: mixed
     question: "Which head coach won the most NBA Finals, and is he in the Basketball Hall of Fame?"
-    expected_pages: [179, 180, 189]
-    verified: false
-    note: "nba_finals (validated) + Hall of Fame coaches list p. 189 (unverified)"
+    expected_pages: [179, 180, 188, 189]
+    verified: true
+    note: "nba_finals + Finals coaching rankings p. 188 + Hall of Fame coaches list p. 189; coach count best answered via SQL over nba_finals"
 
   - id: m5
     category: mixed
     question: "Who won the 2016 NBA Finals, and who was the Finals MVP that year?"
     expected_pages: [180, 102]
-    verified: false
-    note: "nba_finals p. 180 (validated) + Finals MVP list p. 102 (unverified)"
+    verified: true
+    note: "nba_finals p. 180 + Finals MVP list p. 102"
