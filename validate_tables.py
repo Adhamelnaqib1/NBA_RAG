@@ -27,6 +27,7 @@ SOURCE_PAGES: dict[str, list[int]] = {
     "draft_2026": [52],
     "all_nba_by_player": [111, 112],
     "nba_finals": [179, 180],
+    "all_nba_by_season": [104, 105, 106, 107, 108, 109],
 }
 
 # Patterns over raw page text, independent of the extractor's bboxes, x-splits and line clustering.
@@ -39,6 +40,7 @@ DATA_LIKE: dict[str, re.Pattern[str]] = {
     "draft_2026": re.compile(r"^\d+\.?\s"),
     "all_nba_by_player": re.compile(r"\d+ \d+ \d+ \d+$"),
     "nba_finals": re.compile(r"^\d{4}\b"),
+    "all_nba_by_season": re.compile(r", [A-Z]|^\d{4}-\d{2}$|^(FIRST|SECOND|THIRD)$"),
 }
 
 
@@ -139,9 +141,102 @@ def check_finals(t: ExtractedTable, source_text: dict[int, str]) -> list[Check]:
     ]
 
 
+FIRST_SEASON_END, LAST_SEASON_END, THIRD_TEAM_FROM = 1947, 2026, 1989
+ALLOWED_SIZE_EXCEPTIONS: dict[tuple[str, str], int] = {("1951-52", "First"): 6}
+"""(season, team_level) groups allowed to differ from 5 players: the 1951-52 First Team tie."""
+LEVEL_COLUMNS: dict[str, str] = {"First": "first_team", "Second": "second_team", "Third": "third_team"}
+
+
+def _season_label(end_year: int) -> str:
+    return f"{end_year - 1}-{end_year % 100:02d}"
+
+
+def check_all_nba_by_season(t: ExtractedTable, source_text: dict[int, str]) -> list[Check]:
+    """All-NBA by season: every season once and in order, 5 per team (one tie), 2 or 3 levels, clean names."""
+    name = "all_nba_by_season"
+    df = t.df
+    page_text = "\n".join(source_text.get(p, "") for p in SOURCE_PAGES[name])
+
+    expected_seasons = [_season_label(y) for y in range(FIRST_SEASON_END, LAST_SEASON_END + 1)]
+    seasons = list(dict.fromkeys(df["season"]))
+    gaps = sorted(set(expected_seasons) - set(seasons))
+    extra = sorted(set(seasons) - set(expected_seasons))
+    bad_end = df[df["season"].map(lambda x: int(x[:4]) + 1) != df["season_end_year"]]
+
+    sizes = df.groupby(["season", "team_level"], sort=False).size()
+    exceptions = {key: int(n) for key, n in sizes.items() if n != 5}
+    ties = df[df["is_tie"] == 1]
+    tie_groups = sorted({(r.season, r.team_level) for r in ties.itertuples()})
+
+    wrong_levels: list[str] = []
+    for season, group in df.groupby("season", sort=False):
+        expected = ["First", "Second"] + (["Third"] if int(group["season_end_year"].iloc[0]) >= THIRD_TEAM_FROM else [])
+        levels = list(dict.fromkeys(group["team_level"]))
+        if levels != expected:
+            wrong_levels.append(f"{season}: {levels}")
+    source_labels = {lvl: len(re.findall(rf"\b{lvl.upper()}\b", page_text)) for lvl in LEVEL_COLUMNS}
+    parsed_labels = {lvl: int(df.loc[df["team_level"] == lvl, "season"].nunique()) for lvl in LEVEL_COLUMNS}
+
+    source_entries = page_text.count(", ")
+    missing_fields = df[(df["player"].str.strip() == "") | (df["team"].str.strip() == "")]
+    name_shape = re.compile(r"^[A-Z][\w.'’-]*( [\w.'’-]+)+$")
+    team_shape = re.compile(r"^[A-Z][A-Za-z.'’/ -]*[A-Za-z.]$")
+    truncated = df[~df["player"].str.match(name_shape) | ~df["team"].str.match(team_shape)]
+    dupes = df[df.duplicated(["season", "player_search"], keep=False)]
+    data_skips = _data_like_skips(name, t.skipped)
+
+    def rows(frame: pd.DataFrame) -> list[str]:
+        return [f"{r.season} {r.team_level}: {r.player}, {r.team}" for r in frame.itertuples()]
+
+    return [
+        _check(name, "seasons are exactly 1946-47..2025-26 in order", seasons == expected_seasons,
+               f"seasons={len(seasons)} gaps={gaps} unexpected={extra}"),
+        _check(name, "season_end_year is the season's ending year", bad_end.empty, f"{rows(bad_end)}"),
+        _check(name, "5 players per (season, level); only 1951-52 First has 6", exceptions == ALLOWED_SIZE_EXCEPTIONS,
+               f"exceptions={exceptions}"),
+        _check(name, "is_tie only on the 1951-52 First Team", tie_groups == [("1951-52", "First")],
+               f"tie rows={rows(ties)}"),
+        _check(name, "First+Second before 1988-89, plus Third from 1988-89", not wrong_levels, f"{wrong_levels}"),
+        _check(name, "FIRST/SECOND/THIRD labels == level counts in page text", parsed_labels == source_labels,
+               f"parsed={parsed_labels} source={source_labels}"),
+        _check(name, "rows == 'Player, Team' entries in page text", len(df) == source_entries,
+               f"rows={len(df)} source={source_entries}"),
+        _check(name, "every row has a player and a team", missing_fields.empty, f"{rows(missing_fields)}"),
+        _check(name, "no truncated player or team names", truncated.empty, f"{rows(truncated)}"),
+        _check(name, "no player twice in the same season", dupes.empty, f"{rows(dupes)}"),
+        _check(name, "no data-like line skipped", not data_skips, f"{[(s.page, s.text) for s in data_skips]}"),
+    ]
+
+
+def cross_check_all_nba(by_season: pd.DataFrame, by_player: pd.DataFrame) -> list[Check]:
+    """Per player and level, all_nba_by_season counts must equal all_nba_by_player's totals."""
+    counts = (
+        by_season.groupby(["player_search", "team_level"]).size().unstack(fill_value=0)
+        .reindex(columns=list(LEVEL_COLUMNS), fill_value=0)
+        .rename(columns=LEVEL_COLUMNS)
+    )
+    totals = by_player.set_index("player_search")[list(LEVEL_COLUMNS.values())]
+    joined = counts.join(totals, how="outer", lsuffix="_season", rsuffix="_player").fillna(0).astype(int)
+    mismatches: list[str] = []
+    for player, r in joined.iterrows():
+        season_counts = [int(r[f"{c}_season"]) for c in LEVEL_COLUMNS.values()]
+        player_counts = [int(r[f"{c}_player"]) for c in LEVEL_COLUMNS.values()]
+        if season_counts != player_counts:
+            mismatches.append(f"{player}: by_season 1st/2nd/3rd={season_counts} by_player={player_counts}")
+    return [
+        _check("all_nba_by_season", "matches all_nba_by_player per player and level", not mismatches,
+               f"{len(mismatches)} mismatches: " + "; ".join(mismatches) if mismatches else "0 mismatches"),
+    ]
+
+
 REQUIRED_COLUMNS: dict[str, list[str]] = {
-    "draft_2026": ["pick", "player", "drafting_team", "before_nba", "country", "source_page"],
-    "all_nba_by_player": ["player", "total", "first_team", "second_team", "third_team", "source_page"],
+    "draft_2026": ["pick", "player", "player_search", "drafting_team", "before_nba", "country", "source_page"],
+    "all_nba_by_player": [
+        "player", "player_search", "total", "first_team", "second_team", "third_team", "source_page",
+    ],
+    "all_nba_by_season": [
+        "season", "season_end_year", "team_level", "player", "player_search", "team", "is_tie", "source_page",
+    ],
     "nba_finals": [
         "year", "winner_team", "loser_team", "winner_games", "loser_games",
         "winner_best_record", "loser_best_record", "source_page",
@@ -152,6 +247,7 @@ CHECKS: dict[str, Callable[[ExtractedTable, dict[int, str]], list[Check]]] = {
     "draft_2026": check_draft,
     "all_nba_by_player": check_all_nba,
     "nba_finals": check_finals,
+    "all_nba_by_season": check_all_nba_by_season,
 }
 
 
@@ -167,7 +263,14 @@ def run_checks(tables: dict[str, ExtractedTable], source_text: dict[int, str]) -
             results.append(_check(name, "required columns present", False, f"missing={missing}"))
             continue
         results.extend(check_fn(tables[name], source_text))
+
+    usable = {r.table for r in results} - {r.table for r in results if r.name in _STRUCTURAL_CHECKS and not r.passed}
+    if {"all_nba_by_season", "all_nba_by_player"} <= usable:
+        results.extend(cross_check_all_nba(tables["all_nba_by_season"].df, tables["all_nba_by_player"].df))
     return results
+
+
+_STRUCTURAL_CHECKS = frozenset({"table present in spec", "required columns present"})
 
 
 def source_line_for(table: str, row: dict[str, Any], source_text: dict[int, str]) -> str:
@@ -178,6 +281,8 @@ def source_line_for(table: str, row: dict[str, Any], source_text: dict[int, str]
         match = [ln for ln in lines if ln.startswith(prefix)]
     elif table == "all_nba_by_player":
         match = [ln for ln in lines if re.search(rf"(^| ){re.escape(row['player'])} \d", ln)]
+    elif table == "all_nba_by_season":
+        match = [ln for ln in lines if f"{row['player']}, {row['team']}" in ln]
     else:
         match = [ln for ln in lines if ln.startswith(f"{row['year']} ")]
     return match[0] if match else "<no source line found>"

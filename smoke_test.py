@@ -3,8 +3,8 @@
     python smoke_test.py --check          # show the plan; no API calls
     python smoke_test.py                  # asks for confirmation, then runs n2, t3, m1
 
-Each question can make up to 8 LLM calls (5 tool calls via ToolCallLimitMiddleware, recursion_limit 21
-as a backstop) plus one embedding call per search_guide.
+Each question makes at most 6 LLM calls (5 tool calls, then a forced text answer; recursion_limit 21 is
+a backstop) plus one embedding call per search_guide.
 A quota error stops the run immediately so no further free-tier calls are spent.
 """
 
@@ -17,11 +17,18 @@ from typing import Any
 
 from langchain_core.runnables import Runnable
 
-from agent import AgentError, AgentResult, QuotaExceededError, ask, build_agent
+from agent import (
+    TOOL_CALL_LIMIT,
+    AgentError,
+    AgentResult,
+    QuotaExceededError,
+    ask,
+    build_agent,
+)
 from eval_retrieval import DEFAULT_QUESTIONS, EvalQuestion, load_questions
 
 DEFAULT_IDS: tuple[str, ...] = ("n2", "t3", "m1")
-MAX_LLM_CALLS_PER_QUESTION = 8
+MAX_LLM_CALLS_PER_QUESTION = TOOL_CALL_LIMIT + 1
 
 
 def format_outcome(q: EvalQuestion, result: AgentResult) -> str:
@@ -29,7 +36,8 @@ def format_outcome(q: EvalQuestion, result: AgentResult) -> str:
     expected_hit = sorted(set(result.verified_pages) & set(q.expected_pages))
     lines = [
         f"## {q.id} ({q.category}): {q.question}",
-        f"tools: {tools_used} | steps: {len(result.steps)} | latency: {result.seconds:.1f}s",
+        (f"tools: {tools_used} | tool calls: {len(result.steps)} | model calls: {result.model_calls} "
+         f"| latency: {result.seconds:.1f}s"),
         f"cited: {result.pages} | verified: {result.verified_pages} | unverified: {result.unverified_pages}",
         f"expected pages {q.expected_pages} cited and verified: {expected_hit or 'none'}",
     ]

@@ -6,7 +6,7 @@ import csv
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pandas as pd  # type: ignore[import-untyped]
@@ -334,3 +334,165 @@ class TestSchemaText:
         db = tmp_path / "missing.db"
         assert "does not exist" in extract_tables.schema_text(db)
         assert not db.exists()
+
+
+SAMPLE_1996_97: dict[str, list[str]] = {
+    "First": ["Tim Hardaway, Miami", "Grant Hill, Detroit", "Michael Jordan, Chicago", "Karl Malone, Utah",
+              "Hakeem Olajuwon, Houston"],
+    "Second": ["Patrick Ewing, New York", "Gary Payton, Seattle", "Scottie Pippen, Chicago", "Glen Rice, Charlotte",
+               "Mitch Richmond, Sacramento"],
+    "Third": ["Vin Baker, Milwaukee", "Penny Hardaway, Orlando", "Anthony Mason, Charlotte",
+              "Shaquille O’Neal, LA Lakers", "John Stockton, Utah"],
+}
+CHAR_W = 4.0
+
+
+def _entry_words(player: str, team: str, axis: float, top: float) -> list[dict[str, Any]]:
+    """Lays out 'Player, Team' like the guide: the surname's comma ends at `axis`, first names hang left."""
+    *first_names, surname = player.split()
+    words: list[dict[str, Any]] = []
+    x1 = axis
+    for token in reversed([*first_names, surname + ","]):
+        words.append(_word(token, x1 - CHAR_W * len(token), top))
+        x1 = x1 - CHAR_W * len(token) - 2
+    x0 = axis + 2
+    for token in team.split():
+        words.append(_word(token, x0, top))
+        x0 += CHAR_W * len(token) + 2
+    for w in words:
+        w["x1"] = w["x0"] + CHAR_W * len(w["text"])
+    return words
+
+
+def _season_page(columns: list[list[tuple[str, dict[str, list[str]]]]], title: str = "") -> MagicMock:
+    """Fake page: each column is a list of (season, {level: ['Player, Team', ...]}); columns are staggered."""
+    words: list[dict[str, Any]] = []
+    if title:
+        words.append(_word(title, 180, 22))
+    for ci, blocks in enumerate(columns):
+        header_x, axis, top = 68 + 131 * ci, 92 + 131 * ci, 28.0 + 1.5 * ci
+        for season, levels in blocks:
+            words.append(_word(season, header_x, top))
+            top += 15
+            for level, entries in levels.items():
+                words.append(_word(level.upper(), header_x + 5, top))
+                top += 7
+                for entry in entries:
+                    player, team = entry.split(", ", 1)
+                    words += _entry_words(player, team, axis, top)
+                    top += 7
+            top += 10
+    return _fake_page(words)
+
+
+class TestSeasonHelpers:
+    @pytest.mark.parametrize(
+        ("season", "end"),
+        [("1946-47", 1947), ("1996-97", 1997), ("1999-00", 2000), ("2000-01", 2001), ("1899-00", 1900),
+         ("2025-26", 2026)],
+    )
+    def test_season_end_year(self, season: str, end: int) -> None:
+        assert extract_tables.season_end_year(season) == end
+
+    @pytest.mark.parametrize("season", ["1996-98", "2000-00", "1996/97", "96-97", "1996-97 "])
+    def test_season_end_year_rejects_bad_input(self, season: str) -> None:
+        with pytest.raises(ValueError):
+            extract_tables.season_end_year(season)
+
+    @pytest.mark.parametrize(
+        ("a", "b", "expected"),
+        [
+            ("Shaquille O’Neal", "Shaquille O'Neal", "shaquille o'neal"),
+            ("Karim López", "Karim Lopez", "karim lopez"),
+            ("Mikel Brown Jr.", "Mikel Brown, Jr", "mikel brown jr"),
+            ("Nikola Jokić", "NIKOLA  JOKIC", "nikola jokic"),
+            ("World B. Free", "World B Free", "world b free"),
+            ("Shai Gilgeous-Alexander", "shai gilgeous-alexander", "shai gilgeous-alexander"),
+            ("Ja’Kobi Gillespie", "Ja‘Kobi Gillespie", "ja'kobi gillespie"),
+        ],
+    )
+    def test_normalize_player_name(self, a: str, b: str, expected: str) -> None:
+        assert extract_tables.normalize_player_name(a) == extract_tables.normalize_player_name(b) == expected
+
+    def test_find_gutters(self) -> None:
+        words = [_word("aaaa", 10, 0), _word("bb", 32, 5), _word("cccc", 80, 0), _word("d", 150, 0)]
+        # _word is 5pt per char. Spans 10-30, 32-42, 80-100, 150-155: empty 42-80 and 100-150 (2pt gap ignored)
+        assert extract_tables.find_gutters(words, min_gap=15) == [61.0, 125.0]
+        assert extract_tables.find_gutters([], min_gap=15) == []
+
+
+class TestSeasonBlocks:
+    PAGE: ClassVar[list[list[tuple[str, dict[str, list[str]]]]]] = [
+        [("1950-51", {"First": ["Bones McKinney, Washington", "Frank Brian, Tri-Cities"],
+                      "Second": ["Joe Fulks, Philadelphia"]}),
+         ("1951-52", {"First": ["Bob Davies, Rochester (tie)", "Dolph Schayes, Syracuse (tie)"],
+                      "Second": ["Ed Macauley, Boston"]})],
+        [("1952-53", {"First": ["George Mikan, Minneapolis"], "Second": ["Bob Cousy, Boston"]})],
+        [("1988-89", {"First": ["Karl Malone, Utah"], "Second": ["Tom Chambers, Phoenix"],
+                      "Third": ["Dale Ellis, Seattle"]})],
+    ]
+
+    def _parse(self, page: MagicMock) -> tuple[list[dict[str, Any]], list[extract_tables.SkippedLine]]:
+        return extract_tables._extract_season_blocks(page, 104, columns=3, y_range=[20, 625], min_gutter=15)
+
+    def test_reads_down_columns_with_ties_and_hyphenated_teams(self) -> None:
+        rows, skipped = self._parse(_season_page(self.PAGE, title="ALL-NBA TEAM"))
+
+        assert [r["season"] for r in rows] == ["1950-51"] * 3 + ["1951-52"] * 3 + ["1952-53"] * 2 + ["1988-89"] * 3
+        assert rows[0] == {"season": "1950-51", "season_end_year": 1951, "team_level": "First",
+                           "player": "Bones McKinney", "team": "Washington", "is_tie": 0}
+        assert rows[1]["team"] == "Tri-Cities"
+        assert [(r["player"], r["team"], r["is_tie"]) for r in rows[3:5]] == [
+            ("Bob Davies", "Rochester", 1), ("Dolph Schayes", "Syracuse", 1),
+        ]
+        assert [r["team_level"] for r in rows[-3:]] == ["First", "Second", "Third"]
+        assert [(s.text, s.reason) for s in skipped] == [("ALL-NBA TEAM", "outside a season block")]
+
+    def test_malformed_entry_is_skipped_with_reason(self) -> None:
+        page = _season_page([[("1996-97", {"First": ["Tim Hardaway, Miami"]})],
+                             [("1997-98", {"First": ["Karl Malone, Utah"]})],
+                             [("1998-99", {"First": ["Tim Duncan, San Antonio"]})]])
+        page.extract_words.return_value.append(_word("Wrapped", 60, 60))  # a stray line under FIRST
+        rows, skipped = self._parse(page)
+        assert len(rows) == 3
+        assert [(s.text, s.reason) for s in skipped] == [("Wrapped", "not 'Player, Team' in 1996-97 First")]
+
+    def test_wrong_number_of_gutters_raises(self) -> None:
+        page = _season_page([[("1996-97", {"First": ["Tim Hardaway, Miami"]})]])
+        with pytest.raises(ValueError, match="expected 2 column gutters, found 0"):
+            self._parse(page)
+
+    def test_load_adds_player_search_column(self, tmp_path: Path) -> None:
+        spec = {
+            "strategy": "season_blocks", "columns_per_page": 3, "min_gutter": 15,
+            "pages": [{"page": 1, "y_range": [20, 625]}],
+            "cleanup": {"strip_whitespace": True, "search_columns": {"player": "player_search"}},
+        }
+        pdf = MagicMock()
+        pdf.__enter__.return_value.pages = [_season_page(
+            [[("1996-97", {"Third": ["Shaquille O’Neal, LA Lakers"]})], [("1997-98", {"First": ["A B, X"]})],
+             [("1998-99", {"First": ["C D, Y"]})]]
+        )]
+        with patch("extract_tables.pdfplumber.open", return_value=pdf):
+            result = extract_tables.load_and_clean_table(tmp_path / "x.pdf", "all_nba_by_season", spec)
+        row = result.df.iloc[0]
+        assert (row["player"], row["player_search"], row["team"], row["source_page"]) == (
+            "Shaquille O’Neal", "shaquille o'neal", "LA Lakers", 1,
+        )
+
+
+@pytest.mark.skipif(not (Path(__file__).parent / "2026-27-NBA-Guide.pdf").exists(), reason="guide PDF not present")
+def test_regression_1996_97_block_from_pdf_page_107() -> None:
+    """Real PDF p. 107 (read locally, no API): the 1996-97 block must equal the C1 sample exactly."""
+    import pdfplumber
+
+    with pdfplumber.open(Path(__file__).parent / "2026-27-NBA-Guide.pdf") as pdf:
+        rows, skipped = extract_tables._extract_season_blocks(
+            pdf.pages[106], 107, columns=3, y_range=[20, 625], min_gutter=15
+        )
+    parsed: dict[str, list[str]] = {}
+    for r in rows:
+        if r["season"] == "1996-97":
+            parsed.setdefault(r["team_level"], []).append(f"{r['player']}, {r['team']}")
+    assert parsed == SAMPLE_1996_97
+    assert skipped == []

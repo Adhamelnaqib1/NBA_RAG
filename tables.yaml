@@ -3,7 +3,7 @@
 
 tables:
   draft_2026:
-    description: "2026 NBA Draft picks (Round 1 and Round 2) including draft position, player, drafting team, previous institution, and country of origin."
+    description: "2026 NBA Draft picks (Round 1 and Round 2) including draft position, player, drafting team, previous institution, and country of origin. Match player names with LIKE on player_search (lowercase ASCII, straight apostrophes, no dots)."
     pages:
       - page: 52
         bbox: [30, 50, 425, 635]
@@ -20,12 +20,15 @@ tables:
       drafting_team: TEXT
       before_nba: TEXT
       country: TEXT
+      player_search: TEXT
     cleanup:
       strip_whitespace: true
+      search_columns:
+        player: player_search
       numeric_columns: ["pick"]
 
   all_nba_by_player:
-    description: "All-time All-NBA team selections by player, containing total selections as well as First, Second, and Third Team counts."
+    description: "All-time All-NBA team selections by player, containing total selections as well as First, Second, and Third Team counts. Match player names with LIKE on player_search (lowercase ASCII, straight apostrophes, no dots)."
     pages:
       - page: 111
         y_range: [45, 630]
@@ -44,8 +47,11 @@ tables:
       first_team: INTEGER
       second_team: INTEGER
       third_team: INTEGER
+      player_search: TEXT
     cleanup:
       strip_whitespace: true
+      search_columns:
+        player: player_search
       numeric_columns: ["total", "first_team", "second_team", "third_team"]
 
   nba_finals:
@@ -85,3 +91,28 @@ tables:
         winner_team: winner_best_record
         loser_team: loser_best_record
       numeric_columns: ["year", "winner_games", "loser_games"]
+
+  all_nba_by_season:
+    description: "All-NBA teams for every season 1946-47 to 2025-26, one row per player per team. season is written like '1996-97' and season_end_year is its ending year (1997). team_level is 'First', 'Second' or 'Third' (All-NBA First/Second/Third Team); only First and Second exist before 1988-89. team is the player's team that season as printed (city name, e.g. 'Chicago'). is_tie is 1 for entries the guide marks as a tie: the 1951-52 First Team has 6 players because of a tie. Match player names with LIKE on player_search (lowercase ASCII, straight apostrophes, no dots), e.g. player_search LIKE '%o''neal%'."
+    pages:
+      - {page: 104, y_range: [20, 625]}
+      - {page: 105, y_range: [20, 625]}
+      - {page: 106, y_range: [20, 625]}
+      - {page: 107, y_range: [20, 625]}
+      - {page: 108, y_range: [20, 625]}
+      - {page: 109, y_range: [20, 625]}
+    strategy: "season_blocks"
+    columns_per_page: 3
+    min_gutter: 15
+    columns:
+      season: TEXT
+      season_end_year: INTEGER
+      team_level: TEXT
+      player: TEXT
+      player_search: TEXT
+      team: TEXT
+      is_tie: INTEGER
+    cleanup:
+      strip_whitespace: true
+      search_columns:
+        player: player_search

@@ -13,8 +13,10 @@ import logging
 import re
 import sqlite3
 import sys
+import unicodedata
 from contextlib import closing
 from dataclasses import dataclass, field
+from itertools import pairwise
 from operator import itemgetter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -487,6 +489,109 @@ def _extract_line_regex(
     return rows, skipped
 
 
+SEASON_RE = re.compile(r"^(\d{4})-(\d{2})$")
+TEAM_LEVELS: dict[str, str] = {"FIRST": "First", "SECOND": "Second", "THIRD": "Third"}
+# "Player, Team" with an optional " (tie)" marker; teams may contain spaces, dots, slashes and hyphens.
+ENTRY_RE = re.compile(r"^(?P<player>[^,]+), (?P<team>[A-Z][A-Za-z.'’/ -]*?)(?: \((?P<tie>tie)\))?$")
+_APOSTROPHES = str.maketrans({"’": "'", "‘": "'", "`": "'", "´": "'"})
+
+
+def season_end_year(season: str) -> int:
+    """Ending year of a season written like "1996-97" (1997); handles the rollover ("1999-00" -> 2000).
+
+    Raises:
+        ValueError: If `season` is not "YYYY-YY" or the two years are not consecutive.
+    """
+    match = SEASON_RE.match(season)
+    if not match:
+        raise ValueError(f"Not a season like '1996-97': {season!r}")
+    start, end_2 = int(match.group(1)), int(match.group(2))
+    end = start // 100 * 100 + end_2
+    if end <= start:
+        end += 100
+    if end != start + 1:
+        raise ValueError(f"Season years are not consecutive: {season!r}")
+    return end
+
+
+def normalize_player_name(name: str) -> str:
+    """Search key for player names: lowercase ASCII, straight apostrophes, no dots/commas, single spaces.
+
+    "Shaquille O’Neal" and "Shaquille O'Neal" -> "shaquille o'neal"; "Karim López" -> "karim lopez";
+    "Mikel Brown Jr." and "Mikel Brown, Jr" -> "mikel brown jr".
+    """
+    folded = unicodedata.normalize("NFKD", name.translate(_APOSTROPHES))
+    ascii_only = "".join(c for c in folded if not unicodedata.combining(c)).encode("ascii", "ignore").decode()
+    cleaned = re.sub(r"[^a-z0-9' -]", " ", ascii_only.lower().replace(".", " ").replace(",", " "))
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def find_gutters(words: list[dict[str, Any]], min_gap: float) -> list[float]:
+    """Midpoints of vertical strips at least `min_gap` wide that no word overlaps, left to right."""
+    if not words:
+        return []
+    spans = sorted((float(w["x0"]), float(w["x1"])) for w in words)
+    gutters: list[float] = []
+    covered_to = spans[0][1]
+    for x0, x1 in spans[1:]:
+        if x0 - covered_to >= min_gap:
+            gutters.append((covered_to + x0) / 2)
+        covered_to = max(covered_to, x1)
+    return gutters
+
+
+def _extract_season_blocks(
+    page: pdfplumber.page.Page,
+    page_num: int,
+    columns: int,
+    y_range: list[float],
+    min_gutter: float,
+) -> tuple[list[dict[str, Any]], list[SkippedLine]]:
+    """Extracts season blocks laid out in `columns` columns, read down each column, left to right.
+
+    Each block is a "YYYY-YY" header, then FIRST/SECOND/THIRD labels, each followed by "Player, Team"
+    lines. Entries are aligned on the comma, so first names hang left of the header: columns are split
+    at the page's empty vertical gutters instead of fixed x positions.
+
+    Raises:
+        ValueError: If the page does not have exactly `columns - 1` gutters.
+    """
+    y_min, y_max = y_range
+    words = [w for w in page.extract_words() if y_min < w["top"] < y_max]
+    gutters = find_gutters(words, min_gutter)
+    if len(gutters) != columns - 1:
+        raise ValueError(f"PDF p. {page_num}: expected {columns - 1} column gutters, found {len(gutters)}")
+    bounds = [float("-inf"), *gutters, float("inf")]
+
+    rows: list[dict[str, Any]] = []
+    skipped: list[SkippedLine] = []
+    for lo, hi in pairwise(bounds):
+        season: str | None = None
+        level: str | None = None
+        for line in cluster_lines([w for w in words if lo <= w["x0"] < hi]):
+            text = _line_text(line)
+            if SEASON_RE.match(text):
+                season, level = text, None
+            elif text in TEAM_LEVELS:
+                level = TEAM_LEVELS[text]
+                if season is None:
+                    _skip(skipped, page_num, text, "team label before any season header")
+            elif season is None or level is None:
+                _skip(skipped, page_num, text, "outside a season block")
+            elif match := ENTRY_RE.match(text):
+                rows.append({
+                    "season": season,
+                    "season_end_year": season_end_year(season),
+                    "team_level": level,
+                    "player": match.group("player").strip(),
+                    "team": match.group("team").strip(),
+                    "is_tie": int(match.group("tie") is not None),
+                })
+            else:
+                _skip(skipped, page_num, text, f"not 'Player, Team' in {season} {level}")
+    return rows, skipped
+
+
 def load_and_clean_table(
     pdf_path: str | Path,
     table_name: str,
@@ -520,6 +625,14 @@ def load_and_clean_table(
                 blocks = page_entry.get("blocks", [])
                 y_range = page_entry.get("y_range", [0, float(page.height)])
                 extracted, skipped = _extract_stacked_blocks(page, page_num, blocks, y_range)
+            elif strategy == "season_blocks":
+                extracted, skipped = _extract_season_blocks(
+                    page,
+                    page_num,
+                    columns=int(table_spec["columns_per_page"]),
+                    y_range=page_entry.get("y_range", [0, float(page.height)]),
+                    min_gutter=float(table_spec.get("min_gutter", 15)),
+                )
             elif strategy == "line_regex":
                 pattern = table_spec["line_pattern"]
                 fields = table_spec["line_fields"]
@@ -550,6 +663,11 @@ def load_and_clean_table(
             marked = df[col].astype(str).str.startswith("*")
             df[flag_col] = marked.astype(int)
             df[col] = df[col].astype(str).str.lstrip("*").str.strip()
+
+    # Matching key for names (accents, apostrophes, Jr./Sr.): e.g. {player: player_search}.
+    for col, search_col in cleanup.get("search_columns", {}).items():
+        if col in df.columns:
+            df[search_col] = df[col].astype(str).map(normalize_player_name)
 
     if cleanup.get("numeric_columns"):
         for col in cleanup["numeric_columns"]:

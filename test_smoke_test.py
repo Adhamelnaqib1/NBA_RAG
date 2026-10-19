@@ -29,7 +29,7 @@ class TestRun:
         )
         assert smoke_test.run(build_agent(llm=model), [Q], delay=0) == 0
         out = capsys.readouterr().out
-        assert "tools: run_sql | steps: 1 | latency:" in out
+        assert "tools: run_sql | tool calls: 1 | model calls: 2 | latency:" in out
         assert "cited: [52] | verified: [52] | unverified: []" in out
         assert "expected pages [52] cited and verified: [52]" in out
         assert "  [1] run_sql: SELECT 52 AS source_page" in out
@@ -54,7 +54,7 @@ class TestMain:
     ) -> None:
         monkeypatch.setattr(smoke_test, "build_agent", MagicMock(side_effect=AssertionError("no agent")))
         assert smoke_test.main(["--check"]) == 0
-        assert "3 questions: n2, t3, m1; up to 24 LLM calls on the FREE key" in capsys.readouterr().out
+        assert "3 questions: n2, t3, m1; up to 18 LLM calls on the FREE key" in capsys.readouterr().out
 
     def test_unknown_id(self) -> None:
         assert smoke_test.main(["--check", "--ids", "zz"]) == 2

@@ -6,7 +6,7 @@ import sqlite3
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import closing
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -22,7 +22,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.outputs import ChatGeneration, ChatResult
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableBinding
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai.chat_models import GoogleRateLimitError
 from pydantic import Field
@@ -69,6 +69,44 @@ class ScriptedChatModel(GenericFakeChatModel):
         if self.error is not None:
             raise self.error
         return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+
+class ToolChoiceAwareModel(ScriptedChatModel):
+    """Behaves like the real provider: once bound with tool_choice="none" it can only reply in text."""
+
+    tool_choices: list[str | None] = Field(default_factory=list)
+    current_tool_choice: str | None = None
+    forced_reply: str = "Answer from what I found (PDF p. 1)."
+
+    def bind_tools(
+        self,
+        tools: Sequence[Any],
+        *,
+        tool_choice: str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        self.tool_choices.append(tool_choice)
+        # Shallow copy: the scripted iterator and the recording lists stay shared.
+        return self.model_copy(update={"current_tool_choice": tool_choice})
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        if self.current_tool_choice == "none":
+            self.received.append(list(messages))
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=self.forced_reply))])
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+
+def endless_searches() -> Iterator[AIMessage]:
+    n = 0
+    while True:
+        n += 1
+        yield tool_call("search_guide", {"query": f"q{n}"}, f"c{n}")
 
 
 def scripted(*replies: AIMessage) -> ScriptedChatModel:
@@ -144,6 +182,24 @@ class TestBuildAgent:
         assert "search_guide at most 3 times" in prompt and "never repeat a" in prompt
         assert "ended in that year (1996-97), state that assumption" in prompt
         assert "comes from retrieved text and may be" in prompt
+
+    def test_system_prompt_picks_up_new_tables_and_notes(self, tmp_path: Path) -> None:
+        db = tmp_path / "with season.db"
+        with closing(sqlite3.connect(db)) as conn, conn:
+            conn.execute(
+                "CREATE TABLE all_nba_by_season (season TEXT, season_end_year INTEGER, team_level TEXT, "
+                "player TEXT, player_search TEXT, team TEXT, is_tie INTEGER, source_page INTEGER)"
+            )
+            conn.execute("INSERT INTO all_nba_by_season VALUES "
+                         "('1996-97', 1997, 'Third', 'Shaquille O’Neal', 'shaquille o''neal', 'LA Lakers', 0, 107)")
+        prompt = agent.build_system_prompt(db, "tables.yaml")
+
+        assert "Table: all_nba_by_season (1 rows)" in prompt
+        assert "season_end_year INTEGER" in prompt and "player_search TEXT" in prompt
+        assert "only First and Second exist before 1988-89" in prompt
+        assert "is_tie is 1" in prompt
+        assert "season_end_year is its ending year (1997)" in prompt
+        assert "LIKE on player_search" in prompt
 
     def test_system_prompt_is_sent_to_the_model(self) -> None:
         model = scripted(AIMessage(content="ok"))
@@ -262,7 +318,7 @@ class TestAsk:
         with pytest.raises(RuntimeError, match="boom"):
             ask(build_agent(llm=model), "q")
 
-    def test_model_that_never_stops_hits_backstop_with_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_model_ignoring_tool_choice_hits_backstop_with_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
         searches: list[str] = []
         monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(1, 0.1, "x")))
 
@@ -276,7 +332,8 @@ class TestAsk:
         with pytest.raises(TooManyStepsError, match=f"{agent.RECURSION_LIMIT} steps") as exc_info:
             ask(build_agent(llm=model), "q")
 
-        # ToolCallLimitMiddleware(continue) blocks calls 6+ but cannot force an answer: the backstop ends the run.
+        # A model that ignored tool_choice="none" would keep asking; calls 6+ are blocked and the backstop
+        # ends the run. Real Gemini cannot call functions in NONE mode (see test_gemini_payload_*).
         assert searches == ["q1", "q2", "q3", "q4", "q5"]
         assert len(model.received) == 8
         steps = exc_info.value.steps
@@ -285,7 +342,9 @@ class TestAsk:
         assert len(steps) == 8  # every model call requested a tool: 5 ran, 3 were blocked
         assert all("Tool call limit exceeded" in s.output_preview for s in steps[5:])
 
-    def test_compliant_model_answers_after_tool_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_model_ignoring_tool_choice_but_obeying_limit_message_answers(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         searches: list[str] = []
         monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(7, 0.1, "x")))
 
@@ -326,6 +385,93 @@ class TestAsk:
     def test_blank_question_raises(self) -> None:
         with pytest.raises(ValueError):
             ask(build_agent(llm=scripted()), "  ")
+
+
+class TestForceAnswerAfterToolLimit:
+    """ForceAnswerAfterToolLimit: after 5 tool calls the next model call has tool_choice="none"."""
+
+    def test_model_that_keeps_requesting_tools_ends_with_text_answer(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        searches: list[str] = []
+        monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(1, 0.1, "x")))
+        model = ToolChoiceAwareModel(messages=endless_searches())
+
+        result = ask(build_agent(llm=model), "q")
+
+        assert result.answer == "Answer from what I found (PDF p. 1)."
+        assert searches == ["q1", "q2", "q3", "q4", "q5"]
+        assert len(model.received) == agent.TOOL_CALL_LIMIT + 1 == 6
+        assert model.tool_choices == [None] * 5 + ["none"]
+        assert len(result.steps) == 5
+        assert result.verified_pages == [1]
+        assert result.model_calls == 6
+
+    @pytest.mark.parametrize("n_tools", [0, 1, 4])
+    def test_runs_under_the_limit_are_unaffected(self, monkeypatch: pytest.MonkeyPatch, n_tools: int) -> None:
+        searches: list[str] = []
+        monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(2, 0.1, "x")))
+        replies = [tool_call("search_guide", {"query": f"q{i}"}, f"c{i}") for i in range(n_tools)]
+        model = ToolChoiceAwareModel(messages=iter([*replies, AIMessage(content="Own answer.")]))
+
+        result = ask(build_agent(llm=model), "q")
+
+        assert result.answer == "Own answer."
+        assert len(searches) == n_tools
+        assert model.tool_choices == [None] * (n_tools + 1)
+
+    def test_compliant_model_answering_at_the_limit_is_unaffected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(tools, "retrieve", recording_retrieve([], Hit(3, 0.1, "x")))
+        replies = [tool_call("search_guide", {"query": f"q{i}"}, f"c{i}") for i in range(5)]
+        model = ToolChoiceAwareModel(messages=iter([*replies, AIMessage(content="Own answer.")]))
+        model.forced_reply = "Own answer."  # a compliant model would answer the same either way
+
+        result = ask(build_agent(llm=model), "q")
+
+        assert result.answer == "Own answer."
+        assert len(model.received) == 6
+
+    def test_parallel_calls_over_the_limit_are_blocked_then_answer_is_forced(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        searches: list[str] = []
+        monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(4, 0.1, "x")))
+        batch = AIMessage(content="", tool_calls=[
+            {"name": "search_guide", "args": {"query": f"p{i}"}, "id": f"p{i}", "type": "tool_call"} for i in range(7)
+        ])
+        model = ToolChoiceAwareModel(messages=iter([batch]))
+
+        result = ask(build_agent(llm=model), "q")
+
+        assert len(searches) == 5
+        assert sum("Tool call limit exceeded" in s.output_preview for s in result.steps) == 2
+        assert model.tool_choices == [None, "none"]
+        assert result.answer == "Answer from what I found (PDF p. 1)."
+
+    def test_tool_calls_this_run_ignores_earlier_turns(self) -> None:
+        msgs: list[BaseMessage] = [
+            HumanMessage(content="old"),
+            ToolMessage(content="x", tool_call_id="a"),
+            AIMessage(content="old answer"),
+            HumanMessage(content="new"),
+            ToolMessage(content="y", tool_call_id="b"),
+            ToolMessage(content="z", tool_call_id="c", status="error"),
+        ]
+        assert agent.tool_calls_this_run(msgs) == 2
+        assert agent.tool_calls_this_run([HumanMessage(content="only")]) == 0
+
+    def test_gemini_payload_with_tool_choice_none_disables_function_calls(self) -> None:
+        """Offline: the real ChatGoogleGenerativeAI request built for tool_choice="none" (no network)."""
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", api_key="offline-fake", max_retries=0)
+        forced = cast(RunnableBinding[Any, Any], llm.bind_tools([tools.search_guide, tools.run_sql], tool_choice="none"))
+        default = cast(RunnableBinding[Any, Any], llm.bind_tools([tools.search_guide, tools.run_sql]))
+        prompt: list[BaseMessage] = [HumanMessage(content="hi")]
+
+        forced_cfg = llm._prepare_request(prompt, **forced.kwargs)["config"]
+        default_cfg = llm._prepare_request(prompt, **default.kwargs)["config"]
+
+        assert forced_cfg.tool_config.function_calling_config.mode.value == "NONE"
+        declared = [fd.name for t in forced_cfg.tools for fd in t.function_declarations]
+        assert declared == ["search_guide", "run_sql"]  # declarations kept, so tool history stays valid
+        assert default_cfg.tool_config is None
 
 
 class TestHelpers:

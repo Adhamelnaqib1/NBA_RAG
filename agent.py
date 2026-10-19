@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,13 @@ from typing import Any
 import yaml
 from google.genai.errors import APIError
 from langchain.agents import create_agent
-from langchain.agents.middleware import ToolCallLimitMiddleware
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    AgentState,
+    ModelRequest,
+    ModelResponse,
+    ToolCallLimitMiddleware,
+)
 from langchain_core.exceptions import ModelRateLimitError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -34,8 +41,9 @@ logger = logging.getLogger(__name__)
 TOOL_CALL_LIMIT: int = 5
 """Tool calls allowed per question; ToolCallLimitMiddleware refuses further calls with an error message."""
 RECURSION_LIMIT: int = 21
-"""Graph-step backstop. With the middleware each tool round is 3 steps (model, limit check, tools), so 5 rounds
-(15) + a blocked request (2) + the answer (2) = 19 fit, and the worst case is 8 model calls per question."""
+"""Graph-step backstop. Each tool round is 3 steps (model, limit check, tools): 5 rounds (15) + the forced
+answer (2) = 17 fit. With ForceAnswerAfterToolLimit a question makes at most TOOL_CALL_LIMIT + 1 = 6 model
+calls; only a model that ignored tool_choice="none" could reach the backstop."""
 HISTORY_TURNS: int = 6
 PREVIEW_CHARS: int = 300
 SPEC_PATH: Path = Path("tables.yaml")
@@ -128,6 +136,8 @@ class AgentResult:
     """Cited pages that appear in some tool output."""
     unverified_pages: list[int] = field(default_factory=list)
     """Cited pages that no tool returned (possible hallucinated citations)."""
+    model_calls: int = 0
+    """LLM responses in this run (one per model call)."""
 
 
 def table_descriptions(spec_path: str | Path = SPEC_PATH) -> str:
@@ -147,6 +157,41 @@ def build_system_prompt(db_path: str | Path | None = None, spec_path: str | Path
         descriptions=table_descriptions(spec_path),
         schema=schema_text(db_path if db_path is not None else config.DB_PATH),
     )
+
+
+def tool_calls_this_run(messages: Sequence[BaseMessage]) -> int:
+    """Tool results (executed or blocked) since the latest user message; history turns carry none."""
+    count = 0
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            break
+        if isinstance(msg, ToolMessage):
+            count += 1
+    return count
+
+
+class ForceAnswerAfterToolLimit(AgentMiddleware[AgentState[Any], Any, Any]):
+    """Once `limit` tool calls have been made in this run, the next model call gets tool_choice="none".
+
+    For Gemini that sets function_calling_config.mode = NONE, so the model must answer in text from the
+    results it already has. Tool declarations stay in the request, keeping earlier function calls in the
+    history valid. ToolCallLimitMiddleware alone only blocks extra calls; it cannot stop a model that
+    keeps asking.
+    """
+
+    def __init__(self, limit: int) -> None:
+        super().__init__()
+        self.limit = limit
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest[Any],
+        handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
+    ) -> ModelResponse[Any]:
+        if tool_calls_this_run(request.messages) >= self.limit:
+            logger.info("Tool call limit (%d) reached; forcing a text answer.", self.limit)
+            request = request.override(tool_choice="none")
+        return handler(request)
 
 
 def build_agent(
@@ -170,11 +215,15 @@ def build_agent(
         options: dict[str, Any] = {} if temperature is None else {"temperature": temperature}
         llm = ChatGoogleGenerativeAI(model=config.LLM_MODEL, api_key=api_key, max_retries=5, **options)
 
+    middleware: list[AgentMiddleware[Any, Any, Any]] = [
+        ToolCallLimitMiddleware(run_limit=TOOL_CALL_LIMIT),
+        ForceAnswerAfterToolLimit(limit=TOOL_CALL_LIMIT),
+    ]
     return create_agent(
         llm,
         [search_guide, run_sql],
         system_prompt=build_system_prompt(db_path, spec_path),
-        middleware=[ToolCallLimitMiddleware(run_limit=TOOL_CALL_LIMIT)],
+        middleware=middleware,
     )
 
 
@@ -312,4 +361,5 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
         seconds=seconds,
         verified_pages=[p for p in pages if p in retrieved],
         unverified_pages=[p for p in pages if p not in retrieved],
+        model_calls=sum(isinstance(m, AIMessage) for m in new_messages),
     )
