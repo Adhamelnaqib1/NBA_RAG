@@ -14,6 +14,7 @@ PROJECT_ENV_VARS: tuple[str, ...] = (
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
     "LLM_MODEL",
+    "LLM_TEMPERATURE",
     "DATA_DIR",
     "DB_PATH",
 )

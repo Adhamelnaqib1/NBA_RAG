@@ -82,6 +82,17 @@ class TestConfig:
         assert config.Config.from_env().llm_model == "gemini-2.0-flash"
         assert config.Config(gemini_embed_api_key="k1", gemini_llm_api_key="k2").llm_model == "gemini-2.0-flash"
 
+    @pytest.mark.parametrize(("raw", "expected"), [(None, None), ("", None), ("  ", None), ("0", 0.0), (" 0.7 ", 0.7)])
+    def test_llm_temperature(self, monkeypatch: pytest.MonkeyPatch, raw: str | None, expected: float | None) -> None:
+        if raw is not None:
+            monkeypatch.setenv("LLM_TEMPERATURE", raw)
+        assert config.get_llm_temperature() == expected
+
+    def test_llm_temperature_invalid(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_TEMPERATURE", "hot")
+        with pytest.raises(ValueError, match="LLM_TEMPERATURE must be a number"):
+            config.get_llm_temperature()
+
     def test_config_paths_and_collection(self) -> None:
         """Tests paths and default collection resolution."""
         cfg = config.Config(

@@ -129,6 +129,21 @@ class Config:
         )
 
 
+def get_llm_temperature() -> float | None:
+    """Returns LLM_TEMPERATURE as a float, or None when unset (the model's default is then used).
+
+    Raises:
+        ValueError: If LLM_TEMPERATURE is set but is not a number.
+    """
+    raw = os.getenv("LLM_TEMPERATURE", "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError as e:
+        raise ValueError(f"LLM_TEMPERATURE must be a number, got {raw!r}.") from e
+
+
 def __getattr__(name: str) -> Any:
     """Dynamic attribute accessor for module-level constants.
 
