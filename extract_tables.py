@@ -12,12 +12,20 @@ import csv
 import logging
 import re
 import sqlite3
+import sys
+from contextlib import closing
+from dataclasses import dataclass, field
+from operator import itemgetter
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd  # type: ignore[import-untyped]
 import pdfplumber
 import yaml
+from pdfplumber.utils import cluster_objects
+
+if TYPE_CHECKING:
+    from validate_tables import Check
 
 logger = logging.getLogger(__name__)
 
@@ -330,116 +338,160 @@ def _write_report(
 # ----------------------------------------------------------------------
 
 
+LINE_TOLERANCE: float = 3.0
+"""Max vertical distance (pt) between word tops that still counts as the same printed line."""
+
+
+@dataclass(frozen=True)
+class SkippedLine:
+    """A printed line that produced no table row, kept so validation can review it."""
+
+    page: int
+    text: str
+    reason: str
+
+
+@dataclass
+class ExtractedTable:
+    """A cleaned table plus every source line that was skipped while extracting it."""
+
+    df: pd.DataFrame
+    skipped: list[SkippedLine] = field(default_factory=list)
+
+
+def _skip(skipped: list[SkippedLine], page: int, text: str, reason: str) -> None:
+    logger.info("p.%d skipped line (%s): %r", page, reason, text)
+    skipped.append(SkippedLine(page=page, text=text, reason=reason))
+
+
+def _crop(page: pdfplumber.page.Page, bbox: list[float]) -> pdfplumber.page.Page:
+    """Crops a page to a [x0, top, x1, bottom] bbox read from the YAML spec."""
+    if len(bbox) != 4:
+        raise ValueError(f"bbox must have 4 numbers [x0, top, x1, bottom], got {bbox!r}")
+    x0, top, x1, bottom = bbox
+    return page.crop((x0, top, x1, bottom))
+
+
+def cluster_lines(
+    words: list[dict[str, Any]],
+    tolerance: float = LINE_TOLERANCE,
+) -> list[list[dict[str, Any]]]:
+    """Groups words into printed lines by their top coordinate, top to bottom, each sorted left to right.
+
+    Unlike bucketing with round(top / n) * n, words whose tops differ by less than
+    `tolerance` always land on the same line, even across a bucket boundary.
+    """
+    clusters = cluster_objects(words, itemgetter("top"), tolerance)
+    clusters.sort(key=lambda line: min(w["top"] for w in line))
+    return [sorted(line, key=itemgetter("x0")) for line in clusters]
+
+
+def _line_text(line: list[dict[str, Any]]) -> str:
+    return " ".join(w["text"] for w in line)
+
+
 def _extract_word_columns(
     page: pdfplumber.page.Page,
+    page_num: int,
     column_splits: dict[str, list[int]],
     bbox: list[float] | None = None,
-) -> list[dict[str, Any]]:
-    """Extracts rows by word coordinates based on horizontal splits."""
-    target_page = page.crop(bbox) if bbox else page
-    words = target_page.extract_words()
-
-    lines_dict: dict[float, list[dict[str, Any]]] = {}
-    for w in words:
-        y = round(w["top"] / 3.0) * 3
-        lines_dict.setdefault(y, []).append(w)
-
+) -> tuple[list[dict[str, Any]], list[SkippedLine]]:
+    """Extracts rows that start with a pick number, assigning words to columns by x position."""
+    target_page = _crop(page, bbox) if bbox else page
     rows: list[dict[str, Any]] = []
-    for y in sorted(lines_dict.keys()):
-        line_words = sorted(lines_dict[y], key=lambda item: item["x0"])
-        first_token = line_words[0]["text"].rstrip(".")
+    skipped: list[SkippedLine] = []
+
+    for line in cluster_lines(target_page.extract_words()):
+        text = _line_text(line)
+        first_token = line[0]["text"].rstrip(".")
         if not first_token.isdigit():
+            _skip(skipped, page_num, text, "no leading pick number")
             continue
 
-        row_dict: dict[str, Any] = {}
-        for col_name, (x0_bound, x1_bound) in column_splits.items():
-            matched = [w["text"] for w in line_words if x0_bound <= w["x0"] < x1_bound]
-            text = " ".join(matched).strip()
-            row_dict[col_name] = text
+        unassigned = [
+            w["text"] for w in line if not any(lo <= w["x0"] < hi for lo, hi in column_splits.values())
+        ]
+        if unassigned:
+            _skip(skipped, page_num, text, f"words outside every column: {unassigned}")
+            continue
 
-        if row_dict.get("pick") and row_dict["pick"].rstrip(".").isdigit():
-            row_dict["pick"] = int(row_dict["pick"].rstrip("."))
-            rows.append(row_dict)
+        row: dict[str, Any] = {
+            col: " ".join(w["text"] for w in line if lo <= w["x0"] < hi).strip()
+            for col, (lo, hi) in column_splits.items()
+        }
+        row["pick"] = int(first_token)
+        rows.append(row)
 
-    return rows
+    return rows, skipped
 
 
 def _extract_stacked_blocks(
     page: pdfplumber.page.Page,
+    page_num: int,
     blocks: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Extracts and stacks side-by-side vertical column blocks."""
+    y_range: list[float],
+) -> tuple[list[dict[str, Any]], list[SkippedLine]]:
+    """Extracts side-by-side "Player Total 1st 2nd 3rd" blocks, stacking them top to bottom, left to right."""
     words = page.extract_words()
-    all_rows: list[dict[str, Any]] = []
+    y_min, y_max = y_range
+    rows: list[dict[str, Any]] = []
+    skipped: list[SkippedLine] = []
 
     for block in blocks:
         x_min, x_max = block["x_range"]
-        splits = block["splits"]
+        block_words = [w for w in words if x_min <= w["x0"] < x_max and y_min < w["top"] < y_max]
 
-        block_words = [w for w in words if x_min <= w["x0"] < x_max and 45 < w["top"] < 630]
-        lines_dict: dict[float, list[dict[str, Any]]] = {}
-        for w in block_words:
-            y = round(w["top"] / 3.0) * 3
-            lines_dict.setdefault(y, []).append(w)
-
-        for y in sorted(lines_dict.keys()):
-            lw = sorted(lines_dict[y], key=lambda item: item["x0"])
-            player_words = [w["text"] for w in lw if w["x0"] < splits[0]]
-            total_w = [w["text"] for w in lw if splits[0] <= w["x0"] < splits[1]]
-            first_w = [w["text"] for w in lw if splits[1] <= w["x0"] < splits[2]]
-            second_w = [w["text"] for w in lw if splits[2] <= w["x0"] < splits[3]]
-            third_w = [w["text"] for w in lw if w["x0"] >= splits[3]]
-
-            player = " ".join(player_words).strip()
-            if not player or player in {"Player", "–"}:
+        for line in cluster_lines(block_words):
+            tokens = [w["text"] for w in line]
+            text = " ".join(tokens)
+            numbers, name = tokens[-4:], tokens[:-4]
+            if not name or not all(t.isdigit() for t in numbers):
+                _skip(skipped, page_num, text, "not '<player> <total> <1st> <2nd> <3rd>'")
                 continue
+            total, first, second, third = (int(t) for t in numbers)
+            rows.append({
+                "player": " ".join(name),
+                "total": total,
+                "first_team": first,
+                "second_team": second,
+                "third_team": third,
+            })
 
-            try:
-                total = int("".join(total_w))
-                first = int("".join(first_w)) if first_w else 0
-                second = int("".join(second_w)) if second_w else 0
-                third = int("".join(third_w)) if third_w else 0
-                all_rows.append({
-                    "player": player,
-                    "total": total,
-                    "first_team": first,
-                    "second_team": second,
-                    "third_team": third,
-                })
-            except ValueError:
-                continue
-
-    return all_rows
+    return rows, skipped
 
 
 def _extract_line_regex(
     page: pdfplumber.page.Page,
+    page_num: int,
     pattern: str,
     fields: list[str],
     bbox: list[float] | None = None,
-) -> list[dict[str, Any]]:
-    """Extracts rows from page text using a regular expression pattern."""
-    target_page = page.crop(bbox) if bbox else page
-    text = target_page.extract_text() or ""
+) -> tuple[list[dict[str, Any]], list[SkippedLine]]:
+    """Extracts rows from the page's text lines using a regular expression pattern."""
+    target_page = _crop(page, bbox) if bbox else page
+    text = target_page.extract_text(y_tolerance=LINE_TOLERANCE) or ""
     regex = re.compile(pattern)
-
     rows: list[dict[str, Any]] = []
-    for line in text.split("\n"):
-        line = line.strip()
+    skipped: list[SkippedLine] = []
+
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
         match = regex.match(line)
         if match:
-            groups = match.groups()
-            row = dict(zip(fields, groups))
-            rows.append(row)
+            rows.append(dict(zip(fields, match.groups())))
+        else:
+            _skip(skipped, page_num, line, "no regex match")
 
-    return rows
+    return rows, skipped
 
 
 def load_and_clean_table(
     pdf_path: str | Path,
     table_name: str,
     table_spec: dict[str, Any],
-) -> pd.DataFrame:
+) -> ExtractedTable:
     """Extracts, cleans, and structures a table according to its YAML spec.
 
     Args:
@@ -448,11 +500,12 @@ def load_and_clean_table(
         table_spec: Configuration dictionary from tables.yaml.
 
     Returns:
-        Cleaned pandas DataFrame with source_page and source_file added.
+        Cleaned DataFrame (with source_page and source_file added) and all skipped source lines.
     """
     pdf_file = Path(pdf_path).resolve()
     strategy = table_spec.get("strategy")
     all_records: list[dict[str, Any]] = []
+    all_skipped: list[SkippedLine] = []
 
     with pdfplumber.open(pdf_file) as pdf:
         for page_entry in table_spec.get("pages", []):
@@ -462,14 +515,15 @@ def load_and_clean_table(
 
             if strategy == "word_columns":
                 col_splits = table_spec["column_splits"]
-                extracted = _extract_word_columns(page, col_splits, bbox=bbox)
+                extracted, skipped = _extract_word_columns(page, page_num, col_splits, bbox=bbox)
             elif strategy == "stacked_column_blocks":
                 blocks = page_entry.get("blocks", [])
-                extracted = _extract_stacked_blocks(page, blocks)
+                y_range = page_entry.get("y_range", [0, float(page.height)])
+                extracted, skipped = _extract_stacked_blocks(page, page_num, blocks, y_range)
             elif strategy == "line_regex":
                 pattern = table_spec["line_pattern"]
                 fields = table_spec["line_fields"]
-                extracted = _extract_line_regex(page, pattern, fields, bbox=bbox)
+                extracted, skipped = _extract_line_regex(page, page_num, pattern, fields, bbox=bbox)
             else:
                 raise ValueError(f"Unknown extraction strategy '{strategy}' for table '{table_name}'")
 
@@ -478,34 +532,37 @@ def load_and_clean_table(
                 rec["source_file"] = pdf_file.name
 
             all_records.extend(extracted)
+            all_skipped.extend(skipped)
 
     df = pd.DataFrame(all_records)
     if df.empty:
-        return df
+        return ExtractedTable(df, all_skipped)
 
     # Apply cleanup rules
     cleanup = table_spec.get("cleanup", {})
     if cleanup.get("strip_whitespace"):
-        for col in df.select_dtypes(include="object").columns:
+        for col in df.select_dtypes(include=["object", "string"]).columns:
             df[col] = df[col].astype(str).str.strip()
 
-    if cleanup.get("strip_asterisks"):
-        for col in cleanup["strip_asterisks"]:
-            if col in df.columns:
-                df[col] = df[col].astype(str).str.lstrip("*").str.strip()
+    # A leading "*" is a footnote marker; move it into a 0/1 flag column instead of losing it.
+    for col, flag_col in cleanup.get("asterisk_flags", {}).items():
+        if col in df.columns:
+            marked = df[col].astype(str).str.startswith("*")
+            df[flag_col] = marked.astype(int)
+            df[col] = df[col].astype(str).str.lstrip("*").str.strip()
 
     if cleanup.get("numeric_columns"):
         for col in cleanup["numeric_columns"]:
             if col in df.columns:
                 df[col] = df[col].apply(clean_number)
 
-    return df
+    return ExtractedTable(df, all_skipped)
 
 
 def load_tables_from_spec(
     pdf_path: str | Path,
     spec_path: str | Path = "tables.yaml",
-) -> dict[str, pd.DataFrame]:
+) -> dict[str, ExtractedTable]:
     """Loads all tables defined in tables.yaml into clean DataFrames.
 
     Args:
@@ -513,18 +570,19 @@ def load_tables_from_spec(
         spec_path: Path to YAML specification.
 
     Returns:
-        Dictionary mapping table name to cleaned DataFrame.
+        Dictionary mapping table name to its cleaned DataFrame and skipped lines.
     """
     with open(spec_path, encoding="utf-8") as f:
         spec = yaml.safe_load(f)
 
     tables_spec = spec.get("tables", {})
-    loaded_tables: dict[str, pd.DataFrame] = {}
+    loaded_tables: dict[str, ExtractedTable] = {}
 
     for table_name, t_spec in tables_spec.items():
         logger.info("Extracting and cleaning table '%s'...", table_name)
-        df = load_and_clean_table(pdf_path=pdf_path, table_name=table_name, table_spec=t_spec)
-        loaded_tables[table_name] = df
+        loaded_tables[table_name] = load_and_clean_table(
+            pdf_path=pdf_path, table_name=table_name, table_spec=t_spec
+        )
 
     return loaded_tables
 
@@ -540,48 +598,87 @@ def save_tables_to_sqlite(
         db_path: Path to target SQLite database.
     """
     db_file = Path(db_path).resolve()
-    with sqlite3.connect(db_file) as conn:
+    with closing(sqlite3.connect(db_file)) as conn, conn:
         for name, df in dfs.items():
             df.to_sql(name, conn, if_exists="replace", index=False)
             logger.info("Loaded table '%s' (%d rows) into '%s'", name, len(df), db_file.name)
 
 
-def schema(db_path: str | Path = "./nba_stats.db") -> str:
-    """Returns database schema, column dtypes, and 2 sample rows per table.
+def load_validated(
+    pdf_path: str | Path,
+    spec_path: str | Path = "tables.yaml",
+    db_path: str | Path = "./nba_stats.db",
+) -> list[Check]:
+    """Extracts the spec's tables and writes them to SQLite only if every validation check passes.
 
     Args:
-        db_path: Path to the SQLite database file.
+        pdf_path: Path to source PDF.
+        spec_path: Path to YAML specification.
+        db_path: Path to target SQLite database.
 
     Returns:
-        Formatted text representation for use in prompts.
+        All validation results. The database is untouched when any of them failed.
+    """
+    # Imported here because validate_tables imports this module.
+    from validate_tables import read_source_text, run_checks
+
+    extracted = load_tables_from_spec(pdf_path=pdf_path, spec_path=spec_path)
+    results = run_checks(extracted, read_source_text(pdf_path))
+    failed = [c for c in results if not c.passed]
+    if failed:
+        logger.error("Refusing to write '%s': %d validation check(s) failed.", db_path, len(failed))
+        return results
+
+    save_tables_to_sqlite({name: t.df for name, t in extracted.items()}, db_path=db_path)
+    return results
+
+
+def _quote_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _table_names(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    )
+    return [row[0] for row in rows]
+
+
+def table_row_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """Returns {table name: row count} for every user table."""
+    return {
+        t: int(conn.execute(f"SELECT COUNT(*) FROM {_quote_ident(t)}").fetchone()[0]) for t in _table_names(conn)
+    }
+
+
+def schema_text(db_path: str | Path = "./nba_stats.db", sample_rows: int = 2) -> str:
+    """Describes every table for an LLM prompt: name, row count, column names and types, and sample rows.
+
+    Args:
+        db_path: Path to the SQLite database file (opened read-only).
+        sample_rows: Number of sample rows to show per table.
+
+    Returns:
+        Plain-text schema with one section per table and markdown sample rows.
     """
     db_file = Path(db_path).resolve()
     if not db_file.exists():
-        return f"Database '{db_file}' does not exist."
+        return f"Database '{db_file.name}' does not exist."
 
-    output_lines: list[str] = [f"Database Schema ({db_file.name}):", "=" * 40]
+    sections: list[str] = []
+    with closing(sqlite3.connect(db_file.as_uri() + "?mode=ro", uri=True)) as conn:
+        for table, count in table_row_counts(conn).items():
+            ident = _quote_ident(table)
+            # PRAGMA table_info rows: (cid, name, type, notnull, default, pk)
+            columns = ", ".join(f"{c[1]} {c[2] or 'ANY'}" for c in conn.execute(f"PRAGMA table_info({ident})"))
+            sample = pd.read_sql_query(f"SELECT * FROM {ident} LIMIT {int(sample_rows)}", conn)
+            sections.append(
+                f"Table: {table} ({count} rows)\n"
+                f"Columns: {columns}\n"
+                f"Sample rows:\n{sample.to_markdown(index=False)}"
+            )
 
-    with sqlite3.connect(f"file:{db_file}?mode=ro", uri=True) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
-        tables = [row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")]
-
-        if not tables:
-            return "Database contains no tables."
-
-        for table in tables:
-            cursor.execute(f"PRAGMA table_info({table});")
-            columns_info = cursor.fetchall()
-            col_desc = ", ".join(f"{col[1]} {col[2]}" for col in columns_info)
-            output_lines.append(f"\nTable: {table}")
-            output_lines.append(f"Columns: ({col_desc})")
-
-            # Sample rows
-            sample_df = pd.read_sql_query(f"SELECT * FROM {table} LIMIT 2;", conn)
-            output_lines.append("Sample Rows:")
-            output_lines.append(sample_df.to_string(index=False))
-
-    return "\n".join(output_lines)
+    return "\n\n".join(sections) if sections else "Database contains no tables."
 
 
 # ----------------------------------------------------------------------
@@ -655,23 +752,28 @@ def main() -> None:
             preview_dir=args.preview_dir,
         )
     elif args.command == "load":
-        tables = load_tables_from_spec(pdf_path=args.pdf, spec_path=args.spec)
-        for t_name, df in tables.items():
-            print(f"\nTable '{t_name}': {len(df)} rows")
-            print("Null counts per column:")
-            print(df.isnull().sum())
-            print("Sample 3 rows:")
-            print(df.head(3))
-            null_pct = df.isnull().mean()
-            suspicious = null_pct[null_pct > 0.2].to_dict()
-            if suspicious:
-                print(f"WARNING: Suspicious high nulls (>20%): {suspicious}")
+        if args.dry_run:
+            # Same checks as a real load, without touching the database.
+            from validate_tables import read_source_text, run_checks
 
-        if not args.dry_run:
-            save_tables_to_sqlite(tables, db_path=args.db_path)
-            print("\nDatabase Schema Summary:")
-            print(schema(args.db_path))
+            results = run_checks(load_tables_from_spec(args.pdf, args.spec), read_source_text(args.pdf))
+        else:
+            results = load_validated(pdf_path=args.pdf, spec_path=args.spec, db_path=args.db_path)
 
+        for c in results:
+            print(f"{'PASS' if c.passed else 'FAIL'}  {c.table}: {c.name}  [{c.detail}]")
+        if not all(c.passed for c in results):
+            sys.exit("Validation failed; database was not written.")
+        if args.dry_run:
+            print("\nDry run: all checks passed, database not written.")
+            return
+
+        db_file = Path(args.db_path).resolve()
+        with closing(sqlite3.connect(db_file.as_uri() + "?mode=ro", uri=True)) as conn:
+            print(f"\nWrote {db_file.name}:")
+            for name, count in table_row_counts(conn).items():
+                print(f"  {name}: {count} rows")
+        print("\n" + schema_text(db_file))
 
 if __name__ == "__main__":
     main()

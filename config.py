@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +104,7 @@ class Config:
 
     gemini_embed_api_key: str
     gemini_llm_api_key: str
-    llm_model: str = LLM_MODEL
+    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL))
     data_dir: Path = DATA_DIR
     db_path: Path = DB_PATH
     collection_name: str = DEFAULT_COLLECTION

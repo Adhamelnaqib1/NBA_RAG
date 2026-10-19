@@ -28,17 +28,15 @@ tables:
     description: "All-time All-NBA team selections by player, containing total selections as well as First, Second, and Third Team counts."
     pages:
       - page: 111
+        y_range: [45, 630]
         blocks:
           - x_range: [30, 155]
-            splits: [86, 105, 118, 132]
           - x_range: [155, 280]
-            splits: [215, 232, 245, 260]
           - x_range: [280, 410]
-            splits: [342, 358, 372, 386]
       - page: 112
+        y_range: [45, 630]
         blocks:
           - x_range: [30, 155]
-            splits: [86, 105, 118, 132]
     strategy: "stacked_column_blocks"
     columns:
       player: TEXT
@@ -51,14 +49,16 @@ tables:
       numeric_columns: ["total", "first_team", "second_team", "third_team"]
 
   nba_finals:
-    description: "Historical NBA Finals results from 1947 to 2026 with winning and losing teams, head coaches, and series game counts."
+    description: "Historical NBA Finals results from 1947 to 2026 with winning and losing teams, head coaches, and series game counts. winner_best_record / loser_best_record are 1 when that team had (or tied for) the best regular-season record (the '*' footnote on p.180)."
     pages:
       - page: 179
         bbox: [30, 45, 415, 630]
       - page: 180
         bbox: [30, 45, 415, 250]
     strategy: "line_regex"
-    line_pattern: '^(\d{4})\s+(.+?)\s+(\*?[A-Za-z0-9\s.]+?)\s*\(([^)]+)\)\s+(\*?[A-Za-z0-9\s.]+?)\s*\(([^)]+)\)\s+(\d)-(\d)$'
+    # dates: month + day range, may span months ("Sept. 30-Oct. 11"); must end in a digit.
+    # teams: letters, dots, apostrophes, spaces only, with an optional "*" footnote marker ("* Boston" in 1959).
+    line_pattern: '^(\d{4})\s+([A-Z][a-z]+\.?\s+\d+-(?:[A-Z][a-z]+\.?\s+)?\d+)\s+(\*?\s*[A-Za-z.'' ]+?)\s*\(([^)]+)\)\s+(\*?\s*[A-Za-z.'' ]+?)\s*\(([^)]+)\)\s+(\d)-(\d)$'
     line_fields:
       - year
       - dates
@@ -77,7 +77,11 @@ tables:
       loser_coach: TEXT
       winner_games: INTEGER
       loser_games: INTEGER
+      winner_best_record: INTEGER
+      loser_best_record: INTEGER
     cleanup:
       strip_whitespace: true
-      strip_asterisks: ["winner_team", "loser_team"]
+      asterisk_flags:
+        winner_team: winner_best_record
+        loser_team: loser_best_record
       numeric_columns: ["year", "winner_games", "loser_games"]

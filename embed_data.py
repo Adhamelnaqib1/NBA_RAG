@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import chromadb
+import numpy as np
+import numpy.typing as npt
 from chromadb.errors import NotFoundError
 from dotenv import load_dotenv
 from google import genai
@@ -61,6 +63,7 @@ def embed_texts(
 
     Raises:
         APIError: If non-retryable error occurs or retries are exhausted.
+        ValueError: If Gemini returns missing, too few, or wrongly sized embeddings.
     """
     if not texts:
         return []
@@ -70,14 +73,15 @@ def embed_texts(
         output_dimensionality=dim,
     )
 
+    contents: list[types.PartUnion] = list(texts)
+
     for attempt in range(max_retries):
         try:
             response = client.models.embed_content(
                 model=model,
-                contents=texts,
+                contents=contents,
                 config=config,
             )
-            return [emb.values for emb in response.embeddings]
         except APIError as e:
             if e.code not in RETRYABLE_STATUS_CODES or attempt == max_retries - 1:
                 raise
@@ -88,6 +92,39 @@ def embed_texts(
                 f"{e.message or 'Request failed'}. Retrying in {delay:.2f}s..."
             )
             time.sleep(delay)
+            continue
+        return _validate_embeddings(response.embeddings, expected=len(texts), dim=dim)
+
+    raise RuntimeError(f"embed_texts: no attempts made (max_retries={max_retries})")
+
+
+def _validate_embeddings(
+    embeddings: list[types.ContentEmbedding] | None,
+    expected: int,
+    dim: int,
+) -> list[list[float]]:
+    """Checks that Gemini returned one vector of the right size per input text.
+
+    Raises:
+        ValueError: If embeddings are missing, the count is wrong, or a vector has the wrong size.
+    """
+    if not embeddings:
+        raise ValueError(f"Gemini returned no embeddings for {expected} texts")
+    if len(embeddings) != expected:
+        raise ValueError(f"Gemini returned {len(embeddings)} embeddings for {expected} texts")
+
+    vectors: list[list[float]] = []
+    for i, emb in enumerate(embeddings):
+        if not emb.values or len(emb.values) != dim:
+            got = len(emb.values) if emb.values else 0
+            raise ValueError(f"Embedding {i} has {got} dims, expected {dim}")
+        vectors.append(list(emb.values))
+    return vectors
+
+
+def to_chroma_vectors(vectors: list[list[float]]) -> npt.NDArray[np.float32]:
+    """Converts embedding vectors to the float32 array Chroma expects."""
+    return np.asarray(vectors, dtype=np.float32)
 
 
 def generate_chunk_id(source: str, page: int, text: str) -> str:
@@ -420,7 +457,7 @@ def store_in_chromadb(
                 ids=b_ids,
                 documents=b_texts,
                 metadatas=b_metas,
-                embeddings=b_embeddings,
+                embeddings=to_chroma_vectors(b_embeddings),
             )
             pbar.update(len(batch))
             if delay > 0 and (i + batch_size) < total_to_embed:
@@ -453,13 +490,13 @@ def verify_database(
     )
 
     results = collection.query(
-        query_embeddings=q_embeddings,
+        query_embeddings=to_chroma_vectors(q_embeddings),
         n_results=2,
     )
 
-    docs = results.get("documents", [[]])[0]
-    metas = results.get("metadatas", [[]])[0]
-    distances = results.get("distances", [[]])[0]
+    docs = (results.get("documents") or [[]])[0]
+    metas = (results.get("metadatas") or [[]])[0]
+    distances = (results.get("distances") or [[]])[0]
 
     for rank, (doc, meta, dist) in enumerate(zip(docs, metas, distances), start=1):
         page = meta.get("page", "?")
@@ -542,6 +579,7 @@ def main() -> None:
         )
 
         api_key = get_embed_api_key(required=False)
+
         client = genai.Client(api_key=api_key) if api_key else None
 
         collection = store_in_chromadb(

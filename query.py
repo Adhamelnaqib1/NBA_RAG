@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from google import genai
 
 from config import DEFAULT_COLLECTION, EMBED_DIM, EMBED_MODEL, get_embed_api_key
-from embed_data import embed_texts
+from embed_data import embed_texts, to_chroma_vectors
 
 load_dotenv()
 
@@ -77,13 +77,13 @@ def query_vector_store(
     )
 
     results = collection.query(
-        query_embeddings=query_embeddings,
+        query_embeddings=to_chroma_vectors(query_embeddings),
         n_results=min(k, count),
     )
 
-    documents = results.get("documents", [[]])[0]
-    metadatas = results.get("metadatas", [[]])[0]
-    distances = results.get("distances", [[]])[0]
+    documents = (results.get("documents") or [[]])[0]
+    metadatas = (results.get("metadatas") or [[]])[0]
+    distances = (results.get("distances") or [[]])[0]
 
     if not documents:
         print("No matching documents found.")

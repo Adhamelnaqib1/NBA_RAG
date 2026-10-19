@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
+from chromadb.api.models.Collection import Collection
 from google.genai.errors import APIError
 
 from embed_data import (
@@ -15,6 +19,8 @@ from embed_data import (
     generate_chunk_id,
     normalize,
     store_in_chromadb,
+    to_chroma_vectors,
+    verify_database,
 )
 
 
@@ -167,10 +173,98 @@ class TestEmbeddingRetry:
         assert mock_client.models.embed_content.call_count == 1
 
 
+class TestEmbeddingValidation:
+    """Tests for embed_texts handling of bad Gemini responses and exhausted retries."""
+
+    @staticmethod
+    def _client_returning(embeddings: Any) -> MagicMock:
+        mock_client = MagicMock()
+        mock_client.models.embed_content.return_value = MagicMock(embeddings=embeddings)
+        return mock_client
+
+    @pytest.mark.parametrize("embeddings", [None, []])
+    def test_no_embeddings_raises_value_error(self, embeddings: Any) -> None:
+        client = self._client_returning(embeddings)
+        with pytest.raises(ValueError, match="no embeddings for 2 texts"):
+            embed_texts(client=client, texts=["a", "b"], task_type="RETRIEVAL_DOCUMENT")
+
+    def test_too_few_embeddings_raises_value_error(self) -> None:
+        client = self._client_returning([MagicMock(values=[0.1] * EMBED_DIM)])
+        with pytest.raises(ValueError, match="1 embeddings for 2 texts"):
+            embed_texts(client=client, texts=["a", "b"], task_type="RETRIEVAL_DOCUMENT")
+
+    @pytest.mark.parametrize("values", [None, [], [0.1] * (EMBED_DIM - 1)])
+    def test_short_or_missing_vector_raises_value_error(self, values: Any) -> None:
+        client = self._client_returning([MagicMock(values=values)])
+        with pytest.raises(ValueError, match=f"expected {EMBED_DIM}"):
+            embed_texts(client=client, texts=["a"], task_type="RETRIEVAL_QUERY")
+
+    def test_retries_exhausted_reraises_last_api_error(self) -> None:
+        mock_client = MagicMock()
+        mock_client.models.embed_content.side_effect = APIError(429, "Resource exhausted", None)
+
+        with patch("embed_data.time.sleep") as mock_sleep, pytest.raises(APIError) as exc_info:
+            embed_texts(client=mock_client, texts=["a"], task_type="RETRIEVAL_QUERY", max_retries=3)
+
+        assert exc_info.value.code == 429
+        assert mock_client.models.embed_content.call_count == 3
+        assert mock_sleep.call_count == 2
+
+    def test_zero_retries_raises_runtime_error(self) -> None:
+        mock_client = MagicMock()
+        with pytest.raises(RuntimeError, match="no attempts"):
+            embed_texts(client=mock_client, texts=["a"], task_type="RETRIEVAL_QUERY", max_retries=0)
+        mock_client.models.embed_content.assert_not_called()
+
+
+class TestChromaBoundary:
+    """Tests for float32 conversion and Optional Chroma results."""
+
+    def test_to_chroma_vectors_is_float32_matrix(self) -> None:
+        arr = to_chroma_vectors([[0.1, 0.2], [0.3, 0.4]])
+        assert arr.dtype == np.float32
+        assert arr.shape == (2, 2)
+
+    def test_upsert_receives_float32_array(self, tmp_path: Path) -> None:
+        mock_client = MagicMock()
+        mock_client.models.embed_content.return_value = MagicMock(
+            embeddings=[MagicMock(values=[0.05] * EMBED_DIM)]
+        )
+        doc = {"id": "abc", "text": "Lakers won.", "metadata": {"source": "nba.pdf", "page": 1, "chunk_index": 0}}
+
+        captured: list[Any] = []
+        original_upsert = Collection.upsert
+
+        def spy_upsert(self: Collection, *args: Any, **kwargs: Any) -> None:
+            captured.append(kwargs["embeddings"])
+            original_upsert(self, *args, **kwargs)
+
+        with patch.object(Collection, "upsert", spy_upsert):
+            store_in_chromadb(documents=[doc], data_dir=tmp_path, client=mock_client, delay=0.0)
+
+        assert len(captured) == 1
+        assert isinstance(captured[0], np.ndarray)
+        assert captured[0].dtype == np.float32
+        assert captured[0].shape == (1, EMBED_DIM)
+
+    def test_verify_database_handles_none_results(self) -> None:
+        mock_client = MagicMock()
+        mock_client.models.embed_content.return_value = MagicMock(
+            embeddings=[MagicMock(values=[0.05] * EMBED_DIM)]
+        )
+        collection = MagicMock()
+        collection.query.return_value = {"ids": [[]], "documents": None, "metadatas": None, "distances": None}
+
+        verify_database(mock_client, collection, sample_query="anything")
+
+        sent = collection.query.call_args.kwargs["query_embeddings"]
+        assert sent.dtype == np.float32
+
+
 class TestChromaReset:
     """Tests for safe --reset behavior in store_in_chromadb."""
 
-    def test_reset_preserves_unrelated_files_on_disk(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_reset_preserves_unrelated_files_on_disk(self, tmp_path: Path) -> None:
         unrelated_file = tmp_path / "user_notes.txt"
         unrelated_file.write_text("Do not delete me!")
 
@@ -212,7 +306,7 @@ class TestChromaReset:
         assert unrelated_file.exists()
         assert unrelated_file.read_text() == "Do not delete me!"
 
-    def test_skip_stale_cleanup_preserves_other_chunks(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_skip_stale_cleanup_preserves_other_chunks(self, tmp_path: Path) -> None:
         mock_client = MagicMock()
         mock_client.models.embed_content.side_effect = lambda model, contents, config: MagicMock(
             embeddings=[MagicMock(values=[0.05] * EMBED_DIM) for _ in contents]

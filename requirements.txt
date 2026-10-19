@@ -1,4 +1,5 @@
 chromadb
+numpy
 google-genai
 pypdf
 python-dotenv
