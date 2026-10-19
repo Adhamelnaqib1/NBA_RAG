@@ -65,6 +65,8 @@ flowchart LR
 | `agent.py` | The agent: model factory, middleware, prompt, `ask()` | `make_llm`, `build_agent`, `ask`, `AgentResult`, `ToolStep`, `ToolBudgetMiddleware`, `ForceAnswerAfterToolLimit`, `is_off_topic`, `map_llm_error`, `strip_reasoning`, `cited_pages`, `tool_output_pages`, error classes | `config`, `extract_tables` (for `schema_text`), `tools` | `app`, `main` |
 | `tools.py` | The two LangChain tools | `search_guide`, `run_sql` (`@tool`), `retrieve`, `Hit`, `get_collection`, `get_embed_client` | `config`, `embed_data` (`embed_texts`), `sqlsafe` | `agent` |
 | `sqlsafe.py` | Read-only SQL execution | `validate_sql`, `open_readonly`, `run_query`, `to_markdown`, `safe_query`, `source_footer`, `referenced_tables`, `format_pages` | — | `tools`, `test_sqlsafe` |
+| `acronyms.py` | Acronym expansion for searches; the agent's ACRONYMS prompt line | `expand`, `expand_query`, `rrf_merge`, `mentions_any`, `prompt_line`, `load_entries` | — (reads `acronyms.yaml`) | `tools`, `agent` |
+| `acronyms.yaml` | Acronyms users type → wording the guide prints (awards, stat columns, teams) | — | — | read by `acronyms` |
 | `config.py` | All settings and key accessors (loads `.env` at import) | `get_llm_provider`, `get_llm_model`, `get_llm_api_key`, `get_embed_api_key`, budget/limit getters, `Config` | — | everything |
 
 ### Build pipeline
@@ -101,6 +103,8 @@ flowchart TD
     tools --> config
     tools --> embed_data
     tools --> sqlsafe
+    tools --> acronyms
+    agent --> acronyms
     embed_data --> config
     query --> config
     query --> embed_data
@@ -192,19 +196,64 @@ automatically.
 9. **Numbers from search text** only when their meaning is unambiguous; flattened table rows without labels are
    reported as uncertain.
 10. **No guessed answers in search queries**.
-11. **Names exactly as tool output gives them** (no nicknames from memory; a neutral noun such as "team" is allowed).
-12. **Season assumption**: "1997" means the season that ended in 1997 (1996-97); the answer states the assumption
+11. **Pass the user's own words to `search_guide`**: the tool expands acronyms itself (from `acronyms.yaml`, not
+    from guesses), and its "Searched:" line shows the expansion.
+12. **Names exactly as tool output gives them** (no nicknames from memory; a neutral noun such as "team" is allowed).
+13. **Season assumption**: "1997" means the season that ended in 1997 (1996-97); the answer states the assumption
     and mentions 1997-98.
-13. Be concise. The prompt also tells the model its tool budgets and never to mention budgets or limits to the user.
+14. Be concise. The prompt also tells the model its tool budgets and never to mention budgets or limits to the user,
+    and it contains a generated **ACRONYMS** line ("MVP = Most Valuable Player; GSW = Golden State; …", awards and
+    teams) so SQL can use the printed names.
 
 ### The two tools
 
 - **`search_guide(query, k=None)`** — embeds the query (`RETRIEVAL_QUERY`, paid Gemini key) and returns up to `k`
-  passages (default `SEARCH_K` = 8, clamped to 1-10), each headed `--- PDF p. N (distance d) ---`.
+  passages (default `SEARCH_K` = 8, clamped to 1-10), each headed `--- PDF p. N (distance d) ---`. Acronyms in the
+  query are expanded first (see *Acronym expansion*); the output starts with one line listing the queries searched,
+  e.g. `Searched: "Finals MVP 2021" + "Finals Most Valuable Player 2021"` (whitespace collapsed, so it can never
+  look like a passage header or add a verified page).
 - **`run_sql(sql)`** — runs one read-only query through `sqlsafe` and returns a markdown table followed by a
   **Sources footer**, e.g. `Sources: nba_finals = PDF pp. 179-180`, listing the pages of every known table the query
   reads (table names matched outside string literals; pages from `DISTINCT source_page`, queried through the same
   read-only path). Errors come back as readable strings (`SQL REJECTED: …`, `SQL ERROR: …`, `SQL TIMEOUT: …`).
+
+### Acronym expansion
+
+Users type "Finals MVP", "ROTY", "GSW" or "steals"; the guide prints "Finals Most Valuable Player", "Rookie of the
+Year", "Golden State" and the column `STL`. `acronyms.yaml` maps one to the other (`canonical` = the printed wording,
+`acronyms` = what users type), and `acronyms.expand()` rewrites a query: whole words, case-insensitive, longest match
+first ("Finals MVP" before "MVP"), a trailing plural "s" allowed ("MVPs"). Acronyms become the canonical name; a stat
+word gets its printed column inserted after it ("steals leader" → "steals STL leader"). Entries marked
+`ambiguous: true` are documented but never expanded: `WAS` (the word "was"), `MIN` (minutes / Minnesota), `ROY`
+(Brandon Roy), `VAN` (Stan Van Gundy), `TO`, `G`, `AVG`, `HI`. The model always sends the user's own words; the
+expansion happens inside `tools.search()`.
+
+| `ACRONYM_MODE` | Behavior | Trade-off |
+|---|---|---|
+| `both` (default) | original and expanded query embedded in **one** `embed_texts` call, both searched, merged by reciprocal rank fusion (k = 60), de-duplicated by chunk id, top `SEARCH_K` | always covers both wordings; a second Chroma query whenever an acronym is present, and fusion can push a lower-ranked chunk of the original query out of the top k |
+| `fallback` | search the original; only if no returned passage mentions a matched term (case- and whitespace-insensitive) also search the expanded query and merge | cheapest when the original already finds the term; an extra embedding call when it doesn't |
+| `off` | no expansion | — |
+
+Without a match exactly one query is made in every mode.
+
+**Adding an acronym**: add an entry under `awards`, `stats` or `teams` in `acronyms.yaml` with the printed
+`canonical` wording (search the PDF text first), mark it `ambiguous: true` if the acronym is a common word or part
+of a name, and `unverified: true` if the wording is not printed in the guide. Stat entries use
+`direction: add_acronym` with the printed column first in `acronyms`.
+
+**Unverified entries** (wording not printed in the guide; the entry still works): *NBA Cup Most Valuable Player*
+(`NBA Cup MVP`, `IST MVP`) — the guide prints the event as "Emirates NBA Cup" but no Cup MVP award. Unverified
+entries are left out of the prompt's ACRONYMS line.
+
+**Why it was added — and what the test showed.** The hypothesis was that "MVP" misses passages that print "Most
+Valuable Player". Measured on the real collection it did not: the chunk with the Finals MVP 2021 line ranked #1 for
+"Finals MVP 2021", "Finals Most Valuable Player 2021", "who was finals mvp in 2021" and "who was the Finals Most
+Valuable Player in 2021", and the regular-season MVP 2020-21 chunk ranked #5 for both "MVP 2021" and "Most Valuable
+Player 2021" (it contains no heading in either form). The real weakness is in ingestion: pypdf reads the
+multi-column award pages so that each heading lands *after* its list (on PDF p. 102 the Finals MVP list sits under
+"NBA ALL-STAR GAME MOST VALUABLE PLAYER", and the heading text itself is split as "MOST V ALUABLE PLAYER"). The
+expansion is kept because it costs little and helps wordings the embedding handles less well (team and stat
+abbreviations), and the ACRONYMS prompt line gives SQL the printed names.
 
 ### Budgets and termination
 
@@ -313,6 +362,7 @@ All settings are read by `config.py` from the environment (and `.env`, loaded at
 | `TOTAL_TOOL_BUDGET` | tool call attempts per question (integer ≥ 1) | `4` | no |
 | `SEARCH_K` | passages per search when the model doesn't pass `k` (1-10) | `8` | no |
 | `OFFTOPIC_GUARD` | `1` on, `0` off | `1` | no |
+| `ACRONYM_MODE` | `both`, `fallback` or `off` (see *Acronym expansion*) | `both` | no |
 | `APP_MAX_QUESTIONS` | questions per Streamlit session (not reset by *Clear chat*) | `30` | no |
 | `DATA_DIR` | ChromaDB directory used by the tools | `./data` | no |
 | `DB_PATH` | SQLite file used by the tools and CLI | `./nba_stats.db` | no |
@@ -413,6 +463,22 @@ between runs):
 All answers matched ground truth checked against the SQL tables or the PDF page text. Earlier runs, before the budgets: Boston 7.8 s / 3 model calls, 2026
 Finals 38.4 s, 1997 first team 8.4 s.
 
+**Acronym live checks** (`ACRONYM_MODE=both`, Nemotron, 13 LLM calls in total; these runs used `SEARCH_BUDGET=2`
+from the local environment, so up to two searches ran):
+
+| Question | Tools | Tool calls | Model calls | Latency | Verified pages | Answer (checked against the PDF text) |
+|---|---|---|---|---|---|---|
+| 2021 Finals winner, series scoring leader, Finals MVP | search_guide, run_sql, search_guide | 3 | 3 | 43.7 s | 179, 180, 357, 181, 102 | Milwaukee over Phoenix 4-2 ✓; Finals MVP Giannis Antetokounmpo ✓; "led the series in scoring" is inferred from single-game highs on p. 181 — the guide has no 2021 Finals series totals |
+| Who won the MVP in 2021? | search_guide | 1 | 2 | 21.5 s | 100 | Nikola Jokic, 2020-21 (assumption stated; 2021-22 also Jokic) ✓ |
+| Who won ROTY in 1997? | search_guide ×2 | 2 | 3 | 22.4 s | 100 | Allen Iverson, 1996-97 (1997-98 Tim Duncan) ✓ |
+| Who was the 1996 COTY? | search_guide ×2 | 2 | 3 | 20.1 s | 100 | Phil Jackson, 1995-96 (1996-97 Pat Riley) ✓ |
+| Who led the Bulls in steals in 1996-97? | search_guide | 1 | 2 | 230.6 s | 648 | Scottie Pippen 154 (STL total; Jordan 140) ✓ |
+
+Retrieval by mode for the test queries (rank of the target chunk, top 8): the Finals MVP 2021 chunk was #1 for all
+four phrasings in `both`, `fallback` and `off`; the regular-season MVP 2020-21 chunk was #5 for "MVP 2021" and "Most
+Valuable Player 2021" in every mode (in `off` and `fallback` a second chunk of the same list was also #8; in `both`
+fusion pushed it out). `fallback` never needed its second search for these queries.
+
 ---
 
 ## 10. Limitations and troubleshooting
@@ -435,6 +501,13 @@ Finals 38.4 s, 1997 first team 8.4 s.
 - **Search queries can contain guessed terms.** The model does not always follow the "no guessed terms in search
   queries" rule: in the career-question live check its search query included words from its own knowledge (team
   names); the answer was still correct.
+- **Headings on multi-column award pages land after their lists.** pypdf (used at ingestion) reads PDF pp. 99-102
+  column by column, so each award heading follows the list it belongs to (the Finals MVP list sits under "NBA ALL-STAR
+  GAME MOST VALUABLE PLAYER") and some headings are split ("MOST V ALUABLE PLAYER"). Retrieval still finds the right
+  chunk, but a passage can look like it belongs to the wrong award; re-extracting those pages with pdfplumber
+  word positions (as done for the tables) would fix it.
+- **Inferred claims.** When the guide has only part of an answer (e.g. single-game highs but no series totals), the
+  model may state a conclusion that the passages only suggest, such as who "led the series in scoring".
 - **Whole-table citations.** When a SQL query does not select `source_page`, the answer cites the Sources footer's
   page range for the whole table (e.g. PDF pp. 104-109 instead of PDF p. 107). Such pages count as verified but are
   less precise.
