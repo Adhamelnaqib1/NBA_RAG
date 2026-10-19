@@ -18,6 +18,7 @@ from google import genai
 from google.genai.errors import APIError
 from langchain_core.tools import tool
 
+import acronyms
 import config
 import sqlsafe
 from embed_data import embed_texts, to_chroma_vectors
@@ -28,11 +29,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Hit:
-    """One retrieved chunk: its PDF page index, cosine distance, and text."""
+    """One retrieved chunk: its PDF page index, cosine distance, text and Chroma id."""
 
     page: int
     distance: float
     text: str
+    id: str = ""
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    """Hits after acronym handling, and every query actually sent to the vector store."""
+
+    hits: list[Hit]
+    queries: list[str]
 
 
 class RetrievalError(RuntimeError):
@@ -63,16 +73,53 @@ def get_collection(
         raise RetrievalError(f"Collection '{name}' not found. Run embed_data.py first.") from e
 
 
-def retrieve(
+def _query_chroma(collection: chromadb.Collection, vector: list[float], n: int) -> list[Hit]:
+    res = collection.query(
+        query_embeddings=to_chroma_vectors([vector]),
+        n_results=n,
+        include=["documents", "metadatas", "distances"],
+    )
+    ids = (res.get("ids") or [[]])[0]
+    docs = (res.get("documents") or [[]])[0]
+    metas = (res.get("metadatas") or [[]])[0]
+    dists = (res.get("distances") or [[]])[0]
+    hits: list[Hit] = []
+    for cid, doc, meta, dist in zip(ids, docs, metas, dists):
+        page = meta.get("page") if meta else None
+        hits.append(Hit(page=int(page) if isinstance(page, (int, float)) else 0, distance=float(dist),
+                        text=doc or "", id=str(cid)))
+    return hits
+
+
+def merge_hits(rankings: list[list[Hit]], k: int) -> list[Hit]:
+    """Reciprocal rank fusion (k=60) over several hit lists, de-duplicated by chunk id, top k."""
+    by_id: dict[str, Hit] = {}
+    for ranking in rankings:
+        for hit in ranking:
+            by_id.setdefault(hit.id, hit)
+    order = acronyms.rrf_merge([[h.id for h in ranking] for ranking in rankings])
+    return [by_id[i] for i in order[:k]]
+
+
+def search(
     query: str,
     k: int | None = None,
     collection: chromadb.Collection | None = None,
     client: genai.Client | None = None,
-) -> list[Hit]:
+    mode: str | None = None,
+) -> SearchResult:
     """Embeds `query` (RETRIEVAL_QUERY) and returns the `k` nearest chunks (default SEARCH_K), closest first.
 
+    With an acronym match (acronyms.expand) and ACRONYM_MODE:
+      both: the original and expanded queries are embedded in ONE embed_texts call, each searched, and the
+            results merged by reciprocal rank fusion;
+      fallback: the original is searched; only if no passage mentions a matched term is the expanded query
+            embedded and searched too, then merged;
+      off: no expansion.
+    Without a match exactly one query is made.
+
     Raises:
-        ValueError: If the query is blank or k < 1.
+        ValueError: If the query is blank, k < 1, or ACRONYM_MODE is invalid.
         RetrievalError: If the collection is missing or empty.
     """
     if not query.strip():
@@ -81,31 +128,46 @@ def retrieve(
         k = config.get_search_k()
     if k < 1:
         raise ValueError(f"k must be at least 1, got {k}.")
+    mode = mode if mode is not None else config.get_acronym_mode()
 
     collection = collection if collection is not None else get_collection()
     count = collection.count()
     if count == 0:
         raise RetrievalError(f"Collection '{collection.name}' is empty. Run embed_data.py first.")
+    client = client if client is not None else get_embed_client()
+    n = min(k, count)
 
-    vectors = embed_texts(
-        client=client if client is not None else get_embed_client(),
-        texts=[query],
-        task_type="RETRIEVAL_QUERY",
-    )
-    res = collection.query(
-        query_embeddings=to_chroma_vectors(vectors),
-        n_results=min(k, count),
-        include=["documents", "metadatas", "distances"],
-    )
-    docs = (res.get("documents") or [[]])[0]
-    metas = (res.get("metadatas") or [[]])[0]
-    dists = (res.get("distances") or [[]])[0]
+    expansion = acronyms.expand(query) if mode != "off" else None
+    if expansion is not None and mode == "both":
+        original, expanded = embed_texts(client=client, texts=[query, expansion.query], task_type="RETRIEVAL_QUERY")
+        rankings = [_query_chroma(collection, original, n), _query_chroma(collection, expanded, n)]
+        return SearchResult(merge_hits(rankings, n), [query, expansion.query])
 
-    hits: list[Hit] = []
-    for doc, meta, dist in zip(docs, metas, dists):
-        page = meta.get("page") if meta else None
-        hits.append(Hit(page=int(page) if isinstance(page, (int, float)) else 0, distance=float(dist), text=doc or ""))
-    return hits
+    [vector] = embed_texts(client=client, texts=[query], task_type="RETRIEVAL_QUERY")
+    hits = _query_chroma(collection, vector, n)
+    if expansion is not None and mode == "fallback" and not any(
+        acronyms.mentions_any(h.text, expansion.terms) for h in hits
+    ):
+        [vector2] = embed_texts(client=client, texts=[expansion.query], task_type="RETRIEVAL_QUERY")
+        rankings = [hits, _query_chroma(collection, vector2, n)]
+        return SearchResult(merge_hits(rankings, n), [query, expansion.query])
+    return SearchResult(hits, [query])
+
+
+def retrieve(
+    query: str,
+    k: int | None = None,
+    collection: chromadb.Collection | None = None,
+    client: genai.Client | None = None,
+    mode: str | None = None,
+) -> list[Hit]:
+    """The hits of search(); kept for callers that only need the passages."""
+    return search(query, k=k, collection=collection, client=client, mode=mode).hits
+
+
+def searched_line(queries: list[str]) -> str:
+    """'Searched: "q1" + "q2"' — one line; whitespace collapsed so it can never look like a passage header."""
+    return "Searched: " + " + ".join('"' + " ".join(q.split()).replace('"', "'") + '"' for q in queries)
 
 
 def format_hits(hits: list[Hit]) -> str:
@@ -121,16 +183,18 @@ def search_guide(query: str, k: int | None = None) -> str:
     rules, biographies, explanations) and anything the SQL tables do not cover.
 
     Args:
-        query: A focused natural-language search query, e.g. "most points scored in a single game".
+        query: The user's own words, e.g. "who was finals mvp in 2021"; acronyms are expanded for you.
         k: Optional number of passages (1-10); omit it to use the default.
 
     Returns:
-        Up to k passages (default 8), each headed by its page as "PDF p. N", or an error message.
+        A "Searched: ..." line (acronyms are expanded automatically), then up to k passages (default 8), each
+        headed by its page as "PDF p. N"; or an error message.
     """
     try:
         if k is not None:
             k = max(1, min(int(k), config.MAX_SEARCH_K))
-        return format_hits(retrieve(query, k=k))
+        result = search(query, k=k)
+        return f"{searched_line(result.queries)}\n\n{format_hits(result.hits)}"
     except (ValueError, RetrievalError) as e:
         return f"SEARCH ERROR: {e}"
     except APIError as e:

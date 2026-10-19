@@ -173,6 +173,24 @@ def get_search_k() -> int:
     return k
 
 
+ACRONYM_MODES: tuple[str, ...] = ("both", "fallback", "off")
+
+
+def get_acronym_mode() -> str:
+    """ACRONYM_MODE: how search_guide uses acronym expansion (acronyms.yaml).
+
+    both (default): search the original and the expanded query together and merge; fallback: search the
+    expanded query only when no passage mentions the matched term; off: no expansion.
+
+    Raises:
+        ValueError: For any other value.
+    """
+    mode = os.getenv("ACRONYM_MODE", "").strip().lower() or "both"
+    if mode not in ACRONYM_MODES:
+        raise ValueError(f"ACRONYM_MODE must be one of {', '.join(ACRONYM_MODES)}; got {mode!r}.")
+    return mode
+
+
 def get_offtopic_guard() -> bool:
     """OFFTOPIC_GUARD: "1" (default) answers clearly non-NBA questions without calling the model; "0" disables."""
     raw = os.getenv("OFFTOPIC_GUARD", "").strip() or "1"

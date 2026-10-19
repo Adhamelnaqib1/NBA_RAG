@@ -40,6 +40,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langgraph.errors import GraphRecursionError
 
+import acronyms
 import config
 from extract_tables import schema_text
 from tools import run_sql, search_guide
@@ -138,12 +139,18 @@ passage is a flattened table row without clear column labels, say what the passa
 meaning is uncertain.
 10. Search queries may contain only terms from the user's question (plus generic words such as "record" or \
 "All-NBA"); never put an answer, name or number you guessed into a query.
-11. Use names exactly as they appear in tool output. Do not add nicknames or details from memory: write \
+11. search_guide expands acronyms itself (MVP, ROTY, team abbreviations, stat columns; see ACRONYMS), so pass \
+the user's own words unchanged. Its "Searched:" line shows the expansion, which comes from a fixed list, not \
+from guesses.
+12. Use names exactly as they appear in tool output. Do not add nicknames or details from memory: write \
 "New York", not "Knicks", unless a tool returned "Knicks". When grammar needs a noun, add a neutral one such as \
 "team" ("the New York team won"), never a nickname.
-12. Seasons are written like "1996-97". If the user gives a single year such as 1997, assume the season that \
+13. Seasons are written like "1996-97". If the user gives a single year such as 1997, assume the season that \
 ended in that year (1996-97), state that assumption in your answer, and mention the alternative (1997-98).
-13. Be concise.
+14. Be concise.
+
+ACRONYMS (as users type them = as the guide prints them; use the printed names in SQL)
+{acronyms}
 
 TABLE NOTES
 {descriptions}
@@ -232,6 +239,7 @@ def build_system_prompt(
         search_budget=search_budget,
         sql_budget=sql_budget,
         total_budget=total_budget,
+        acronyms=acronyms.prompt_line(),
         descriptions=table_descriptions(spec_path),
         schema=schema_text(db_path if db_path is not None else config.DB_PATH),
     )

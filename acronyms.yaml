@@ -1,0 +1,97 @@
+# Acronyms users type vs. the wording the 2026-27 NBA Guide prints. Read by acronyms.py; used to expand
+# search_guide queries and to tell the agent the printed names (single source of truth).
+#
+# Fields:
+#   canonical   the wording as PRINTED in the guide (verified against the PDF text unless `unverified: true`)
+#   acronyms    what users type (whole word, case-insensitive; a trailing plural "s" is allowed)
+#   ambiguous   true = listed for documentation only, never expanded (common words, names, other meanings)
+#   unverified  true = the canonical wording was not found in the PDF text; the entry still works
+#   direction   replace (default): a typed acronym is replaced by `canonical`.
+#               add_acronym (stats): the typed word gets its printed column acronym (acronyms[0]) inserted
+#               after it; a typed acronym becomes "canonical acronyms[0]".
+
+awards:
+  - {canonical: Most Valuable Player, acronyms: [MVP]}
+  - {canonical: Finals Most Valuable Player, acronyms: [FMVP, Finals MVP]}
+  - {canonical: Defensive Player of the Year, acronyms: [DPOY]}
+  - {canonical: Rookie of the Year, acronyms: [ROTY]}
+  # "ROY" is also a name (Brandon Roy, Roy Hibbert), so it is never expanded.
+  - {canonical: Rookie of the Year, acronyms: [ROY], ambiguous: true}
+  - {canonical: Coach of the Year, acronyms: [COY, COTY]}
+  - {canonical: Sixth Man of the Year, acronyms: [6MOY, 6MAN, SMOY]}
+  - {canonical: Most Improved Player, acronyms: [MIP]}
+  - {canonical: Clutch Player of the Year, acronyms: [CPOY]}
+  - {canonical: All-Star Game Most Valuable Player, acronyms: [ASG MVP, All-Star MVP]}
+  # Printed as "NBA BASKETBALL EXECUTIVE OF THE YEAR"; "Executive of the Year" also matches the printed text.
+  - {canonical: Executive of the Year, acronyms: [EOY]}
+  - {canonical: Hall of Fame, acronyms: [HOF]}
+  # The guide prints the event as "Emirates NBA Cup" but no Cup MVP award anywhere.
+  - {canonical: NBA Cup Most Valuable Player, acronyms: [NBA Cup MVP, IST MVP], unverified: true}
+
+stats:
+  # Column acronyms as printed in the player tables: Player G MIN FGM FGA FG% 3PM 3PA 3P% FTM FTA FT% ORB DRB
+  # REB AST PF DQ STL TO BLK PTS AVG HI (team tables print TRB and PPG).
+  - {canonical: steals, acronyms: [STL, SPG], direction: add_acronym}
+  - {canonical: blocks, acronyms: [BLK, BPG], direction: add_acronym}
+  - {canonical: assists, acronyms: [AST, APG], direction: add_acronym}
+  - {canonical: rebounds, acronyms: [REB, RPG], direction: add_acronym}
+  - {canonical: points, acronyms: [PTS, PPG], direction: add_acronym}
+  - {canonical: field goal percentage, acronyms: [FG%], direction: add_acronym}
+  - {canonical: three-point percentage, acronyms: [3P%], direction: add_acronym}
+  # The guide more often prints "3-point field goal percentage" (63 pages vs 3 for "three-point percentage").
+  - {canonical: 3-point field goal percentage, acronyms: [3P%], direction: add_acronym}
+  - {canonical: free throw percentage, acronyms: [FT%], direction: add_acronym}
+  - {canonical: games played, acronyms: [GP]}
+  # Short or common-word column names: documentation only.
+  - {canonical: turnovers, acronyms: [TO], direction: add_acronym, ambiguous: true}
+  - {canonical: games, acronyms: [G], ambiguous: true}
+  - {canonical: minutes, acronyms: [MIN], ambiguous: true}
+  - {canonical: average, acronyms: [AVG], ambiguous: true}
+  - {canonical: high, acronyms: [HI], ambiguous: true}
+
+teams:
+  # canonical = how the guide prints the team in its tables; acronyms = the abbreviations printed in the
+  # standings headers (current set on PDF p. 6 and other recent standings pages).
+  - {canonical: Atlanta, acronyms: [ATL]}
+  - {canonical: Boston, acronyms: [BOS]}
+  - {canonical: Brooklyn, acronyms: [BKN]}
+  - {canonical: Charlotte, acronyms: [CHA]}
+  - {canonical: Chicago, acronyms: [CHI]}
+  - {canonical: Cleveland, acronyms: [CLE]}
+  - {canonical: Dallas, acronyms: [DAL]}
+  - {canonical: Denver, acronyms: [DEN]}
+  - {canonical: Detroit, acronyms: [DET]}
+  - {canonical: Golden State, acronyms: [GSW]}
+  - {canonical: Houston, acronyms: [HOU]}
+  - {canonical: Indiana, acronyms: [IND]}
+  - {canonical: LA Clippers, acronyms: [LAC]}
+  - {canonical: LA Lakers, acronyms: [LAL]}
+  - {canonical: Memphis, acronyms: [MEM]}
+  - {canonical: Miami, acronyms: [MIA]}
+  - {canonical: Milwaukee, acronyms: [MIL]}
+  # "MIN" is also the minutes column.
+  - {canonical: Minnesota, acronyms: [MIN], ambiguous: true}
+  - {canonical: New Orleans, acronyms: [NOP]}
+  - {canonical: New York, acronyms: [NYK]}
+  - {canonical: Oklahoma City, acronyms: [OKC]}
+  - {canonical: Orlando, acronyms: [ORL]}
+  - {canonical: Philadelphia, acronyms: [PHI]}
+  - {canonical: Phoenix, acronyms: [PHX]}
+  - {canonical: Portland, acronyms: [POR]}
+  - {canonical: Sacramento, acronyms: [SAC]}
+  - {canonical: San Antonio, acronyms: [SAS]}
+  - {canonical: Toronto, acronyms: [TOR]}
+  - {canonical: Utah, acronyms: [UTA]}
+  # "WAS" is the English word ("who was ..."), so it is never expanded.
+  - {canonical: Washington, acronyms: [WAS], ambiguous: true}
+  # Older abbreviations printed in historical standings (franchises that moved or were renamed).
+  - {canonical: New Jersey, acronyms: [NJN]}
+  - {canonical: Seattle, acronyms: [SEA]}
+  - {canonical: New Orleans, acronyms: [NOH]}
+  - {canonical: Kansas City, acronyms: [KCK]}
+  - {canonical: San Diego, acronyms: [SDC]}
+  - {canonical: Buffalo, acronyms: [BUF]}
+  - {canonical: Cincinnati, acronyms: [CIN]}
+  - {canonical: San Francisco, acronyms: [SFW]}
+  # "VAN" is also part of names (Stan Van Gundy).
+  - {canonical: Vancouver, acronyms: [VAN], ambiguous: true}
