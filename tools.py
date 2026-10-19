@@ -147,10 +147,11 @@ def run_sql(sql: str) -> str:
             are returned, so use ORDER BY / LIMIT / aggregates.
 
     Returns:
-        A markdown table of results, or an error message explaining what to fix.
+        A markdown table of results followed by a "Sources: table = PDF pp. ..." footer for the tables the
+        query reads, or an error message explaining what to fix.
     """
     try:
-        return sqlsafe.safe_query(sql, db_path=config.DB_PATH)
+        result = sqlsafe.safe_query(sql, db_path=config.DB_PATH)
     except sqlsafe.UnsafeSQLError as e:
         return f"SQL REJECTED: {e}"
     except sqlsafe.QueryTimeoutError as e:
@@ -159,3 +160,9 @@ def run_sql(sql: str) -> str:
         return f"SQL ERROR: {e}"
     except sqlite3.Error as e:
         return f"SQL ERROR: {e}. Check table and column names against the schema and retry."
+    try:
+        footer = sqlsafe.source_footer(sql, db_path=config.DB_PATH)
+    except (sqlsafe.UnsafeSQLError, sqlsafe.QueryTimeoutError, sqlite3.Error) as e:
+        logger.warning("Could not build the source-pages footer: %s", e)
+        footer = ""
+    return f"{result}\n\n{footer}" if footer else result

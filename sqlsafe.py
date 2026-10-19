@@ -169,3 +169,67 @@ def to_markdown(result: QueryResult) -> str:
 def safe_query(sql: str, db_path: str | Path, max_rows: int = MAX_ROWS, timeout_s: float = TIMEOUT_SECONDS) -> str:
     """Runs a validated read-only query and returns the rows as a markdown table."""
     return to_markdown(run_query(sql, db_path, max_rows=max_rows, timeout_s=timeout_s))
+
+
+# --------------------------------------------------------------------------------------------------
+# Source-page footer: which PDF pages the tables in a query come from
+# --------------------------------------------------------------------------------------------------
+
+SOURCE_PAGE_COLUMN = "source_page"
+
+
+def referenced_tables(sql: str, table_names: list[str]) -> list[str]:
+    """Known tables whose names appear in `sql` as identifiers, outside single-quoted string literals.
+
+    Matches whole words only, case-insensitively, bare or "double-quoted", in order of first appearance.
+    """
+    code = _STRING_LITERAL_RE.sub("''", sql)
+    found: list[tuple[int, str]] = []
+    for name in table_names:
+        match = re.search(rf"(?<![\w$]){re.escape(name)}(?![\w$])", code, re.IGNORECASE)
+        if match:
+            found.append((match.start(), name))
+    return [name for _, name in sorted(found)]
+
+
+def format_pages(pages: list[int]) -> str:
+    """[179, 180] -> "PDF pp. 179-180"; [52] -> "PDF p. 52"; [6, 9, 10] -> "PDF pp. 6, 9-10"."""
+    ranges: list[str] = []
+    ordered = sorted(set(pages))
+    start = prev = ordered[0]
+    for page in [*ordered[1:], None]:
+        if page is not None and page == prev + 1:
+            prev = page
+            continue
+        ranges.append(str(start) if start == prev else f"{start}-{prev}")
+        if page is not None:
+            start = prev = page
+    return f"PDF {'p.' if len(ordered) == 1 else 'pp.'} {', '.join(ranges)}"
+
+
+def source_footer(sql: str, db_path: str | Path, timeout_s: float = TIMEOUT_SECONDS) -> str:
+    """'Sources: table = PDF pp. ...' for each known table the query references that has a source_page column.
+
+    Every lookup goes through run_query (validated, read-only, authorizer, timeout, row cap).
+    Returns "" when no referenced table has source pages.
+    """
+    tables = [str(r[0]) for r in run_query(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        db_path, timeout_s=timeout_s,
+    ).rows]
+    parts: list[str] = []
+    for table in referenced_tables(sql, tables):
+        ident = '"' + table.replace('"', '""') + '"'
+        # PRAGMA table_info is denied by the authorizer, so a table without the column is detected by its error.
+        try:
+            pages = [int(r[0]) for r in run_query(
+                f"SELECT DISTINCT {SOURCE_PAGE_COLUMN} FROM {ident} WHERE {SOURCE_PAGE_COLUMN} IS NOT NULL "
+                f"ORDER BY {SOURCE_PAGE_COLUMN}", db_path, timeout_s=timeout_s,
+            ).rows]
+        except sqlite3.OperationalError as e:
+            if "no such column" not in str(e):
+                raise
+            continue
+        if pages:
+            parts.append(f"{table} = {format_pages(pages)}")
+    return f"Sources: {'; '.join(parts)}" if parts else ""

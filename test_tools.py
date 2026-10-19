@@ -169,3 +169,29 @@ class TestRunSqlTool:
     def test_missing_db_becomes_string(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(config, "DB_PATH", tmp_path / "gone.db")
         assert run_sql.invoke({"sql": "SELECT 1"}).startswith("SQL ERROR: Database 'gone.db' not found")
+
+
+class TestRunSqlSourcesFooter:
+    @pytest.fixture(autouse=True)
+    def db(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        path = tmp_path / "nba stats.db"
+        with closing(sqlite3.connect(path)) as conn, conn:
+            conn.execute("CREATE TABLE nba_finals (year INTEGER, winner_team TEXT, source_page INTEGER)")
+            conn.executemany("INSERT INTO nba_finals VALUES (?, ?, ?)", [(1957, "Boston", 179), (2024, "Boston", 180)])
+        monkeypatch.setattr(config, "DB_PATH", path)
+        return path
+
+    def test_count_query_gets_footer(self) -> None:
+        out = run_sql.invoke({"sql": "SELECT COUNT(*) AS titles FROM nba_finals WHERE winner_team = 'Boston';"})
+        assert out.splitlines() == ["| titles |", "| --- |", "| 2 |", "", "Sources: nba_finals = PDF pp. 179-180"]
+
+    def test_errors_get_no_footer(self) -> None:
+        assert "Sources:" not in run_sql.invoke({"sql": "SELECT nope FROM nba_finals"})
+        assert "Sources:" not in run_sql.invoke({"sql": "DELETE FROM nba_finals"})
+
+    def test_footer_failure_keeps_the_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def broken(sql: str, db_path: Path) -> str:
+            raise sqlite3.OperationalError("database is locked")
+
+        monkeypatch.setattr(tools.sqlsafe, "source_footer", broken)
+        assert run_sql.invoke({"sql": "SELECT year FROM nba_finals ORDER BY year"}).splitlines()[2] == "| 1957 |"

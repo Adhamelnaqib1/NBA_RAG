@@ -188,3 +188,79 @@ class TestMarkdown:
     def test_markdown_notes_truncation_and_empty(self, db: Path) -> None:
         assert "first 50 rows only" in safe_query("SELECT year FROM nba_finals", db)
         assert safe_query("SELECT year FROM nba_finals WHERE year > 3000", db) == "(0 rows)"
+
+
+@pytest.fixture
+def paged_db(tmp_path: Path) -> Path:
+    """Tables with and without source_page, in a path with spaces."""
+    path = tmp_path / "paged dir" / "nba stats.db"
+    path.parent.mkdir()
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute("CREATE TABLE nba_finals (year INTEGER, winner_team TEXT, source_page INTEGER)")
+        conn.executemany("INSERT INTO nba_finals VALUES (?, ?, ?)",
+                         [(1947, "Philadelphia", 179), (2026, "New York", 180), (2025, "Oklahoma City", 180)])
+        conn.execute("CREATE TABLE all_nba_by_season (season TEXT, player TEXT, source_page INTEGER)")
+        conn.executemany("INSERT INTO all_nba_by_season VALUES (?, ?, ?)",
+                         [(f"s{p}", f"P{p}", p) for p in (104, 105, 106, 107, 108, 109)])
+        conn.execute("CREATE TABLE draft_2026 (pick INTEGER, player TEXT, source_page INTEGER)")
+        conn.execute("INSERT INTO draft_2026 VALUES (1, 'AJ Dybantsa', 52)")
+        conn.execute("CREATE TABLE notes (text TEXT)")
+        conn.execute("INSERT INTO notes VALUES ('no pages here')")
+    return path
+
+
+class TestSourceFooter:
+    def test_single_table(self, paged_db: Path) -> None:
+        sql = "SELECT COUNT(*) FROM nba_finals WHERE winner_team = 'Boston'"
+        assert sqlsafe.source_footer(sql, paged_db) == "Sources: nba_finals = PDF pp. 179-180"
+
+    def test_join_lists_every_table_in_order(self, paged_db: Path) -> None:
+        sql = "SELECT s.player FROM all_nba_by_season s JOIN draft_2026 d ON d.player = s.player"
+        assert sqlsafe.source_footer(sql, paged_db) == (
+            "Sources: all_nba_by_season = PDF pp. 104-109; draft_2026 = PDF p. 52"
+        )
+
+    def test_cte_finds_inner_table(self, paged_db: Path) -> None:
+        sql = "WITH picks AS (SELECT * FROM draft_2026) SELECT COUNT(*) FROM picks"
+        assert sqlsafe.source_footer(sql, paged_db) == "Sources: draft_2026 = PDF p. 52"
+
+    def test_table_name_inside_string_literal_is_ignored(self, paged_db: Path) -> None:
+        sql = "SELECT 'nba_finals' AS label, 'it''s draft_2026' AS other FROM all_nba_by_season LIMIT 1"
+        assert sqlsafe.source_footer(sql, paged_db) == "Sources: all_nba_by_season = PDF pp. 104-109"
+
+    @pytest.mark.parametrize("sql", ["SELECT 1", "SELECT * FROM no_such_table", "SELECT text FROM notes",
+                                     "SELECT nba_finals_count FROM (SELECT 1 AS nba_finals_count)"])
+    def test_no_footer_for_unknown_or_unpaged_tables(self, paged_db: Path, sql: str) -> None:
+        assert sqlsafe.source_footer(sql, paged_db) == ""
+
+    def test_quoted_and_case_insensitive_names(self, paged_db: Path) -> None:
+        assert sqlsafe.source_footer('SELECT * FROM "NBA_FINALS"', paged_db) == "Sources: nba_finals = PDF pp. 179-180"
+
+    def test_footer_queries_use_the_read_only_path(self, paged_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        seen: list[str] = []
+        original = sqlsafe.run_query
+
+        def spy(sql: str, db_path: str | Path, max_rows: int = sqlsafe.MAX_ROWS,
+                timeout_s: float = sqlsafe.TIMEOUT_SECONDS) -> sqlsafe.QueryResult:
+            seen.append(sql)
+            return original(sql, db_path, max_rows=max_rows, timeout_s=timeout_s)
+
+        monkeypatch.setattr(sqlsafe, "run_query", spy)
+        sqlsafe.source_footer("SELECT * FROM nba_finals", paged_db)
+        assert len(seen) == 2 and seen[0].startswith("SELECT name FROM sqlite_master")
+        assert seen[1].startswith('SELECT DISTINCT source_page FROM "nba_finals"')
+        with closing(sqlite3.connect(paged_db)) as conn:
+            assert conn.execute("SELECT count(*) FROM nba_finals").fetchone() == (3,)
+
+    def test_referenced_tables(self) -> None:
+        names = ["draft_2026", "nba_finals", "all_nba_by_player"]
+        assert sqlsafe.referenced_tables("SELECT * FROM nba_finals, draft_2026", names) == ["nba_finals", "draft_2026"]
+        assert sqlsafe.referenced_tables("SELECT 'all_nba_by_player' FROM x_nba_finals_y", names) == []
+
+    @pytest.mark.parametrize(
+        ("pages", "text"),
+        [([52], "PDF p. 52"), ([180, 179], "PDF pp. 179-180"), ([6, 9, 10], "PDF pp. 6, 9-10"),
+         ([104, 105, 106, 107, 108, 109], "PDF pp. 104-109"), ([111, 111, 112], "PDF pp. 111-112")],
+    )
+    def test_format_pages(self, pages: list[int], text: str) -> None:
+        assert sqlsafe.format_pages(pages) == text
