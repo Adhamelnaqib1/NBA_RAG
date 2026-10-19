@@ -4,8 +4,8 @@
     python smoke_test.py                  # asks for confirmation, then runs n2, t3, m1
     python smoke_test.py --models a,b --ids n2 t4   # same questions on each NVIDIA model, one comparison table
 
-Each question makes at most 6 LLM calls (5 tool calls, then a forced text answer; recursion_limit 21 is
-a backstop) plus one embedding call per search_guide.
+Each question makes at most TOTAL_TOOL_BUDGET + 1 = 5 LLM calls (4 tool calls, then a forced text answer;
+the recursion limit is a backstop) plus one embedding call per search_guide.
 A quota error stops the run immediately so no further LLM calls are spent; failures are never re-run.
 LLM_MODEL / LLM_MAX_TOKENS overrides apply to this process only; .env is never edited.
 """
@@ -25,7 +25,6 @@ from typing import Any
 from langchain_core.runnables import Runnable
 
 from agent import (
-    TOOL_CALL_LIMIT,
     AgentError,
     AgentResult,
     ConfigError,
@@ -35,6 +34,7 @@ from agent import (
     ask,
     build_agent,
     llm_label,
+    max_model_calls,
 )
 from eval_retrieval import DEFAULT_QUESTIONS, EvalQuestion, load_questions
 
@@ -43,7 +43,7 @@ EXTRA_QUESTIONS: tuple[EvalQuestion, ...] = (
     # Smoke-only: the single-year phrasing that used to hit the step cap (season rule: 1997 -> 1996-97).
     EvalQuestion("a4", "numeric", "Who were the all nba first team players in 1997", [107], verified=False),
 )
-MAX_LLM_CALLS_PER_QUESTION = TOOL_CALL_LIMIT + 1
+MAX_LLM_CALLS_PER_QUESTION = max_model_calls()
 
 
 def format_outcome(q: EvalQuestion, result: AgentResult) -> str:
@@ -96,7 +96,7 @@ def run(graph: Runnable[Any, Any], questions: list[EvalQuestion], delay: float) 
 # Model comparison (--models)
 # --------------------------------------------------------------------------------------------------
 
-LIMIT_MESSAGE = "Tool call limit exceeded"
+LIMIT_MESSAGE = "limit reached"
 
 
 @contextmanager
@@ -143,7 +143,7 @@ class Outcome:
 
     @property
     def blocked_calls(self) -> int:
-        """Tool calls the model made after the limit (refused by ToolCallLimitMiddleware)."""
+        """Tool calls refused by the per-tool or total budget (ToolBudgetMiddleware)."""
         return sum(LIMIT_MESSAGE in s.output_preview for s in self.steps)
 
 

@@ -212,3 +212,11 @@ class TestSessionControls:
         with pytest.raises(AppTestError, match="disabled"):
             at.chat_input[0].set_value("q3")
         assert [c[0] for c in fake.calls] == ["q1", "q2"]
+
+
+def test_offtopic_canned_answer_shows_like_a_normal_answer(fake: FakeAgent) -> None:
+    fake.reply = lambda q: AgentResult(answer=agent.OFFTOPIC_ANSWER, seconds=0.0)
+    at = ask_in(run_app(), "Who won the 2026 NFL Super Bowl?")
+    assert "The 2026-27 NBA Guide covers the NBA only." in texts(at.markdown)
+    assert "No tools were used." in texts(at.markdown)
+    assert not at.error and "Model calls: 0" in " ".join(texts(at.caption))

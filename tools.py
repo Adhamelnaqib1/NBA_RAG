@@ -24,7 +24,6 @@ from embed_data import embed_texts, to_chroma_vectors
 
 logger = logging.getLogger(__name__)
 
-SEARCH_K: int = 5
 
 
 @dataclass(frozen=True)
@@ -66,11 +65,11 @@ def get_collection(
 
 def retrieve(
     query: str,
-    k: int = SEARCH_K,
+    k: int | None = None,
     collection: chromadb.Collection | None = None,
     client: genai.Client | None = None,
 ) -> list[Hit]:
-    """Embeds `query` (RETRIEVAL_QUERY) and returns the `k` nearest chunks, closest first.
+    """Embeds `query` (RETRIEVAL_QUERY) and returns the `k` nearest chunks (default SEARCH_K), closest first.
 
     Raises:
         ValueError: If the query is blank or k < 1.
@@ -78,6 +77,8 @@ def retrieve(
     """
     if not query.strip():
         raise ValueError("Search query is empty.")
+    if k is None:
+        k = config.get_search_k()
     if k < 1:
         raise ValueError(f"k must be at least 1, got {k}.")
 
@@ -115,18 +116,21 @@ def format_hits(hits: list[Hit]) -> str:
 
 
 @tool
-def search_guide(query: str) -> str:
+def search_guide(query: str, k: int | None = None) -> str:
     """Semantic search over the 2026-27 NBA Guide text. Use for narrative questions (history, records,
     rules, biographies, explanations) and anything the SQL tables do not cover.
 
     Args:
         query: A focused natural-language search query, e.g. "most points scored in a single game".
+        k: Optional number of passages (1-10); omit it to use the default.
 
     Returns:
-        Up to 5 passages, each headed by its page as "PDF p. N", or an error message.
+        Up to k passages (default 8), each headed by its page as "PDF p. N", or an error message.
     """
     try:
-        return format_hits(retrieve(query, k=SEARCH_K))
+        if k is not None:
+            k = max(1, min(int(k), config.MAX_SEARCH_K))
+        return format_hits(retrieve(query, k=k))
     except (ValueError, RetrievalError) as e:
         return f"SEARCH ERROR: {e}"
     except APIError as e:

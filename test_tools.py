@@ -101,7 +101,7 @@ class TestSearchGuideTool:
         assert isinstance(run_sql, BaseTool)
         assert search_guide.name == "search_guide"
         assert run_sql.name == "run_sql"
-        assert set(search_guide.args) == {"query"}
+        assert set(search_guide.args) == {"query", "k"}
         assert set(run_sql.args) == {"sql"}
 
     def test_formats_passages_with_pdf_pages(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -195,3 +195,32 @@ class TestRunSqlSourcesFooter:
 
         monkeypatch.setattr(tools.sqlsafe, "source_footer", broken)
         assert run_sql.invoke({"sql": "SELECT year FROM nba_finals ORDER BY year"}).splitlines()[2] == "| 1957 |"
+
+
+class TestSearchK:
+    @pytest.fixture
+    def seen(self, monkeypatch: pytest.MonkeyPatch) -> list[int | None]:
+        ks: list[int | None] = []
+
+        def fake(query: str, k: int | None = None) -> list[Hit]:
+            ks.append(k)
+            return [Hit(1, 0.1, "x")]
+
+        monkeypatch.setattr(tools, "retrieve", fake)
+        return ks
+
+    def test_default_k_comes_from_search_k(self, collection: chromadb.Collection, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SEARCH_K", "2")
+        assert len(retrieve("x", collection=collection, client=_gemini())) == 2
+        monkeypatch.delenv("SEARCH_K")
+        assert len(retrieve("x", collection=collection, client=_gemini())) == 3  # 8 requested, 3 chunks exist
+
+    @pytest.mark.parametrize(("k", "sent"), [(None, None), (3, 3), (0, 1), (99, 10)])
+    def test_tool_passes_or_clamps_k(self, seen: list[int | None], k: int | None, sent: int | None) -> None:
+        args: dict[str, object] = {"query": "q"} if k is None else {"query": "q", "k": k}
+        search_guide.invoke(args)
+        assert seen == [sent]
+
+    def test_invalid_search_k_is_a_readable_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SEARCH_K", "50")
+        assert search_guide.invoke({"query": "q"}).startswith("SEARCH ERROR: SEARCH_K must be an integer from 1 to 10")

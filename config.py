@@ -36,6 +36,11 @@ DEFAULT_LLM_MODELS: dict[str, str] = {
 LLM_API_KEY_VARS: dict[str, str] = {"nvidia": "NVIDIA_API_KEY", "gemini": "GEMINI_LLM_API_KEY"}
 DEFAULT_LLM_TIMEOUT_SECONDS: float = 120.0
 DEFAULT_APP_MAX_QUESTIONS: int = 30
+DEFAULT_SEARCH_BUDGET: int = 1
+DEFAULT_SQL_BUDGET: int = 3
+DEFAULT_TOTAL_TOOL_BUDGET: int = 4
+DEFAULT_SEARCH_K: int = 8
+MAX_SEARCH_K: int = 10
 
 DATA_DIR: Path = Path(os.getenv("DATA_DIR", "./data"))
 DB_PATH: Path = Path(os.getenv("DB_PATH", "./nba_stats.db"))
@@ -143,6 +148,37 @@ def get_llm_max_tokens() -> int | None:
     so the chat library's default applies."""
     value = _positive_number("LLM_MAX_TOKENS", None, int)
     return None if value is None else int(value)
+
+
+def get_search_budget() -> int:
+    """SEARCH_BUDGET (default 1): search_guide calls allowed per question."""
+    return int(_positive_number("SEARCH_BUDGET", DEFAULT_SEARCH_BUDGET, int))
+
+
+def get_sql_budget() -> int:
+    """SQL_BUDGET (default 3): run_sql calls allowed per question."""
+    return int(_positive_number("SQL_BUDGET", DEFAULT_SQL_BUDGET, int))
+
+
+def get_total_tool_budget() -> int:
+    """TOTAL_TOOL_BUDGET (default 4): tool call attempts (allowed or refused) per question."""
+    return int(_positive_number("TOTAL_TOOL_BUDGET", DEFAULT_TOTAL_TOOL_BUDGET, int))
+
+
+def get_search_k() -> int:
+    """SEARCH_K (default 8, 1-10): passages search_guide returns when the model does not pass k."""
+    k = int(_positive_number("SEARCH_K", DEFAULT_SEARCH_K, int))
+    if k > MAX_SEARCH_K:
+        raise ValueError(f"SEARCH_K must be an integer from 1 to {MAX_SEARCH_K}, got {k}.")
+    return k
+
+
+def get_offtopic_guard() -> bool:
+    """OFFTOPIC_GUARD: "1" (default) answers clearly non-NBA questions without calling the model; "0" disables."""
+    raw = os.getenv("OFFTOPIC_GUARD", "").strip() or "1"
+    if raw not in ("0", "1"):
+        raise ValueError(f"OFFTOPIC_GUARD must be 0 or 1, got {raw!r}.")
+    return raw == "1"
 
 
 def get_app_max_questions() -> int:

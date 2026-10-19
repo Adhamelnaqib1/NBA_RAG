@@ -111,23 +111,26 @@ def search_calls(n: int) -> list[tuple[int, dict[str, Any]]]:
 
 
 class TestNvidiaAgentEndToEnd:
-    def test_sixth_request_has_tool_choice_none_and_answer_is_clean(self) -> None:
+    def test_fifth_request_has_tool_choice_none_and_answer_is_clean(self) -> None:
         final = completion(content="<think>scratch work</think>AJ Dybantsa went first (PDF p. 52).",
                            reasoning="hidden chain of thought", usage=(300, 50))
-        session = FakeSession([*search_calls(5), final])
+        session = FakeSession([*search_calls(4), final])
 
         result = ask(build_agent(llm=nvidia_llm(session)), "Who was the first pick?")
 
-        assert len(session.payloads) == 6
-        assert [p.get("tool_choice") for p in session.payloads[:5]] == [None] * 5
-        assert session.payloads[5]["tool_choice"] == "none"
-        assert [t["function"]["name"] for t in session.payloads[5]["tools"]] == ["search_guide", "run_sql"]
-        assert session.payloads[5]["model"] == MODEL
-        assert session.payloads[5]["max_tokens"] == 4096
+        assert len(session.payloads) == 5
+        assert [p.get("tool_choice") for p in session.payloads[:4]] == [None] * 4
+        assert session.payloads[4]["tool_choice"] == "none"
+        assert [t["function"]["name"] for t in session.payloads[4]["tools"]] == ["search_guide", "run_sql"]
+        assert session.payloads[4]["model"] == MODEL
+        assert session.payloads[4]["max_tokens"] == 4096
         assert result.answer == "AJ Dybantsa went first (PDF p. 52)."
         assert "scratch" not in result.answer and "hidden" not in result.answer
-        assert result.model_calls == 6
-        assert (result.input_tokens, result.output_tokens) == (5 * 100 + 300, 5 * 20 + 50)
+        assert result.model_calls == 5
+        assert (result.input_tokens, result.output_tokens) == (4 * 100 + 300, 4 * 20 + 50)
+        # 1 search ran; searches 2-4 were refused by the 1-search budget
+        assert [s.output_preview for s in result.steps[1:]] == [
+            "search limit reached; use run_sql or answer from what you have"] * 3
         assert result.verified_pages == [52]
 
     def test_short_run_is_unaffected(self) -> None:

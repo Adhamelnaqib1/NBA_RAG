@@ -202,3 +202,48 @@ def test_app_max_questions_invalid(monkeypatch: pytest.MonkeyPatch, raw: str) ->
     monkeypatch.setenv("APP_MAX_QUESTIONS", raw)
     with pytest.raises(ValueError, match="APP_MAX_QUESTIONS must be a positive int"):
         config.get_app_max_questions()
+
+
+@pytest.mark.parametrize(
+    ("var", "getter", "default"),
+    [("SEARCH_BUDGET", "get_search_budget", 1), ("SQL_BUDGET", "get_sql_budget", 3),
+     ("TOTAL_TOOL_BUDGET", "get_total_tool_budget", 4), ("SEARCH_K", "get_search_k", 8)],
+)
+def test_budget_and_search_k_defaults_and_overrides(
+    monkeypatch: pytest.MonkeyPatch, var: str, getter: str, default: int
+) -> None:
+    assert getattr(config, getter)() == default
+    monkeypatch.setenv(var, " 2 ")
+    assert getattr(config, getter)() == 2
+
+
+@pytest.mark.parametrize("var", ["SEARCH_BUDGET", "SQL_BUDGET", "TOTAL_TOOL_BUDGET", "SEARCH_K"])
+@pytest.mark.parametrize("raw", ["0", "-2", "x", "2.5"])
+def test_budget_and_search_k_invalid(monkeypatch: pytest.MonkeyPatch, var: str, raw: str) -> None:
+    monkeypatch.setenv(var, raw)
+    getter = {"SEARCH_BUDGET": config.get_search_budget, "SQL_BUDGET": config.get_sql_budget,
+              "TOTAL_TOOL_BUDGET": config.get_total_tool_budget, "SEARCH_K": config.get_search_k}[var]
+    with pytest.raises(ValueError, match=f"{var} must be a positive int"):
+        getter()
+
+
+def test_search_k_upper_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SEARCH_K", "10")
+    assert config.get_search_k() == 10
+    monkeypatch.setenv("SEARCH_K", "11")
+    with pytest.raises(ValueError, match="SEARCH_K must be an integer from 1 to 10, got 11"):
+        config.get_search_k()
+
+
+@pytest.mark.parametrize(("raw", "on"), [(None, True), ("1", True), (" 0 ", False), ("", True)])
+def test_offtopic_guard(monkeypatch: pytest.MonkeyPatch, raw: str | None, on: bool) -> None:
+    if raw is not None:
+        monkeypatch.setenv("OFFTOPIC_GUARD", raw)
+    assert config.get_offtopic_guard() is on
+
+
+@pytest.mark.parametrize("raw", ["yes", "true", "2", "off"])
+def test_offtopic_guard_invalid(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+    monkeypatch.setenv("OFFTOPIC_GUARD", raw)
+    with pytest.raises(ValueError, match="OFFTOPIC_GUARD must be 0 or 1"):
+        config.get_offtopic_guard()

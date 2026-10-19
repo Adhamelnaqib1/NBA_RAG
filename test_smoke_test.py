@@ -60,7 +60,7 @@ class TestMain:
         assert smoke_test.main(["--check"]) == 0
         out = capsys.readouterr().out
         assert "LLM: nvidia / nvidia/nemotron-3.5-super-vl-120b-a12b" in out
-        assert "3 questions: n2, t3, m1; up to 18 LLM calls on the LLM key" in out
+        assert "3 questions: n2, t3, m1; up to 15 LLM calls on the LLM key" in out
 
     def test_unknown_id(self) -> None:
         assert smoke_test.main(["--check", "--ids", "zz"]) == 2
@@ -84,7 +84,7 @@ def test_any_expected_page_is_enough_and_missing_is_flagged() -> None:
 
 def test_extra_1997_question_is_selectable(capsys: pytest.CaptureFixture[str]) -> None:
     assert smoke_test.main(["--check", "--ids", "a1", "a2", "a3", "a4"]) == 0
-    assert "4 questions: a1, a2, a3, a4; up to 24 LLM calls" in capsys.readouterr().out
+    assert "4 questions: a1, a2, a3, a4; up to 20 LLM calls" in capsys.readouterr().out
 
 
 def test_root_cause_reports_innermost_message() -> None:
@@ -190,7 +190,7 @@ class TestCompareModels:
         assert stopped == ""
         [o] = outcomes
         assert o.backstop and o.error == "recursion backstop hit"
-        assert o.blocked_calls == 3 and len(o.steps) == 8
+        assert o.blocked_calls == 3 and len(o.steps) == 6  # 3 SQL ran, then SQL-budget + 2 total refusals
         summary = smoke_test.format_summary(outcomes, ["stubborn"])
         assert summary.splitlines()[2] == "| stubborn | 0/1 | 0/1 | - | - | 0/0 | 1 | 1 |"
 
@@ -255,7 +255,7 @@ class TestCompareCli:
         out = capsys.readouterr().out
         assert "LLM: nvidia / m-a, m-b" in out
         assert "max tokens override: 8192" in out
-        assert "6 questions: n2, t4, m1, a1, a2, a4; up to 72 LLM calls" in out
+        assert "6 questions: n2, t4, m1, a1, a2, a4; up to 60 LLM calls" in out
 
     @pytest.mark.parametrize("argv", [["--models", " , "], ["--max-tokens", "0"]])
     def test_bad_arguments(self, argv: list[str]) -> None:

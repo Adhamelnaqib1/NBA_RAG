@@ -230,8 +230,18 @@ class TestBuildAgent:
         assert "flattened table row without clear column labels" in prompt
         assert "may be incomplete" in prompt
         assert "retry once" in prompt
-        assert "at most 5 tool calls per question" in prompt
-        assert "search_guide at most 3 times" in prompt and "never repeat a" in prompt
+        assert "at most 1 search_guide call(s), 3 run_sql call(s) and 4 tool calls in total" in prompt
+        assert "Never mention budgets or limits to the user." in prompt
+        # (a) NBA-only scope
+        assert "Scope is the NBA only." in prompt
+        assert "answer in one sentence that the guide covers the NBA only, and call no tools" in prompt
+        assert "For a comparison with another league, answer only the NBA part." in prompt
+        # (b) entity check
+        assert "Entity check: before answering from search results, verify that the league, season and names" in prompt
+        assert "never substitute a similar-looking entity" in prompt
+        # (c) one search per question
+        assert "One search per question: write one good search_guide query using only terms from the question" in prompt
+        assert "do not repeat or reword the search" in prompt
         assert "ended in that year (1996-97), state that assumption" in prompt
         assert "comes from retrieved text and may be" in prompt
         assert "never put an answer, name or number you guessed into a query" in prompt
@@ -372,66 +382,6 @@ class TestAsk:
         with pytest.raises(RuntimeError, match="boom"):
             ask(build_agent(llm=model), "q")
 
-    def test_model_ignoring_tool_choice_hits_backstop_with_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        searches: list[str] = []
-        monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(1, 0.1, "x")))
-
-        def forever() -> Iterator[AIMessage]:
-            n = 0
-            while True:
-                n += 1
-                yield tool_call("search_guide", {"query": f"q{n}"}, f"c{n}")
-
-        model = ScriptedChatModel(messages=forever())
-        with pytest.raises(TooManyStepsError, match=f"{agent.RECURSION_LIMIT} steps") as exc_info:
-            ask(build_agent(llm=model), "q")
-
-        # A model that ignored tool_choice="none" would keep asking; calls 6+ are blocked and the backstop
-        # ends the run. Real Gemini cannot call functions in NONE mode (see test_gemini_payload_*).
-        assert searches == ["q1", "q2", "q3", "q4", "q5"]
-        assert len(model.received) == 8
-        steps = exc_info.value.steps
-        assert [s.args["query"] for s in steps[:5]] == searches
-        assert all(s.output_preview.startswith("--- PDF p. 1") for s in steps[:5])
-        assert len(steps) == 8  # every model call requested a tool: 5 ran, 3 were blocked
-        assert all("Tool call limit exceeded" in s.output_preview for s in steps[5:])
-
-    def test_model_ignoring_tool_choice_but_obeying_limit_message_answers(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        searches: list[str] = []
-        monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(7, 0.1, "x")))
-
-        class StopsWhenLimited(ScriptedChatModel):
-            """Requests a search every turn until it is told the tool limit was exceeded."""
-
-            def _generate(
-                self,
-                messages: list[BaseMessage],
-                stop: list[str] | None = None,
-                run_manager: CallbackManagerForLLMRun | None = None,
-                **kwargs: Any,
-            ) -> ChatResult:
-                if any(isinstance(m, ToolMessage) and "limit exceeded" in content_text(m.content) for m in messages):
-                    self.received.append(list(messages))
-                    return ChatResult(generations=[ChatGeneration(message=AIMessage(content="Partial (PDF p. 7)."))])
-                return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
-
-        n_calls = 30
-        model = StopsWhenLimited(messages=iter([tool_call("search_guide", {"query": f"q{n}"}, f"c{n}")
-                                                for n in range(1, n_calls)]))
-        result = ask(build_agent(llm=model), "q")
-
-        assert result.answer == "Partial (PDF p. 7)."
-        assert len(searches) == agent.TOOL_CALL_LIMIT == 5
-        assert len(model.received) == 7  # 5 tool rounds + 1 blocked request + the answer
-        assert "Tool call limit exceeded" in result.steps[-1].output_preview
-        assert result.verified_pages == [7]
-
-    def test_tool_limit_middleware_is_installed(self) -> None:
-        graph = build_agent(llm=scripted(AIMessage(content="hi")))
-        assert "ToolCallLimitMiddleware.after_model" in graph.get_graph().nodes
-
     def test_empty_answer_raises(self) -> None:
         with pytest.raises(AgentError, match="without an answer"):
             ask(build_agent(llm=scripted(AIMessage(content=[]))), "q")
@@ -441,77 +391,225 @@ class TestAsk:
             ask(build_agent(llm=scripted()), "  ")
 
 
-class TestForceAnswerAfterToolLimit:
-    """ForceAnswerAfterToolLimit: after 5 tool calls the next model call has tool_choice="none"."""
+def search(query: str, call_id: str) -> AIMessage:
+    return tool_call("search_guide", {"query": query}, call_id)
 
-    def test_model_that_keeps_requesting_tools_ends_with_text_answer(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        searches: list[str] = []
-        monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(1, 0.1, "x")))
-        model = ToolChoiceAwareModel(messages=endless_searches())
 
+def sql(statement: str, call_id: str) -> AIMessage:
+    return tool_call("run_sql", {"sql": statement}, call_id)
+
+
+def batch(*calls: tuple[str, dict[str, Any]]) -> AIMessage:
+    return AIMessage(content="", tool_calls=[
+        {"name": name, "args": args, "id": f"b{i}", "type": "tool_call"} for i, (name, args) in enumerate(calls)
+    ])
+
+
+SEARCH_REFUSAL = "search limit reached; use run_sql or answer from what you have"
+TOTAL_REFUSAL = "tool limit reached; answer from what you have"
+DRAFT_SQL = "SELECT pick, player, source_page FROM draft_2026"
+
+
+class TestToolBudgets:
+    """Per-tool budgets (1 search, 3 SQL) and a total of 4 attempts, then tool_choice="none"."""
+
+    @pytest.fixture(autouse=True)
+    def searches(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        calls: list[str] = []
+        monkeypatch.setattr(tools, "retrieve", recording_retrieve(calls, Hit(7, 0.1, "passage")))
+        return calls
+
+    def test_defaults(self) -> None:
+        assert (config.get_search_budget(), config.get_sql_budget(), config.get_total_tool_budget()) == (1, 3, 4)
+        assert agent.max_model_calls() == 5
+        assert agent.recursion_limit(4) == agent.RECURSION_LIMIT == 16
+        graph = build_agent(llm=scripted(AIMessage(content="hi")))
+        assert "ToolBudgetMiddleware.after_model" in graph.get_graph().nodes
+        assert cast(RunnableBinding[Any, Any], graph).config["recursion_limit"] == 16
+
+    def test_search_then_sql_then_answer(self, searches: list[str]) -> None:
+        model = ToolChoiceAwareModel(messages=iter([search("q", "c1"), sql(DRAFT_SQL, "c2"),
+                                                    AIMessage(content="Done (PDF p. 52).")]))
         result = ask(build_agent(llm=model), "q")
+        assert [s.name for s in result.steps] == ["search_guide", "run_sql"]
+        assert searches == ["q"] and "AJ Dybantsa" in result.steps[1].output_preview
+        assert result.model_calls == 3 and model.tool_choices == [None, None, None]
 
-        assert result.answer == "Answer from what I found (PDF p. 1)."
-        assert searches == ["q1", "q2", "q3", "q4", "q5"]
-        assert len(model.received) == agent.TOOL_CALL_LIMIT + 1 == 6
-        assert model.tool_choices == [None] * 5 + ["none"]
-        assert len(result.steps) == 5
-        assert result.verified_pages == [1]
-        assert result.model_calls == 6
-
-    @pytest.mark.parametrize("n_tools", [0, 1, 4])
-    def test_runs_under_the_limit_are_unaffected(self, monkeypatch: pytest.MonkeyPatch, n_tools: int) -> None:
-        searches: list[str] = []
-        monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(2, 0.1, "x")))
-        replies = [tool_call("search_guide", {"query": f"q{i}"}, f"c{i}") for i in range(n_tools)]
-        model = ToolChoiceAwareModel(messages=iter([*replies, AIMessage(content="Own answer.")]))
-
+    def test_sql_then_search_then_answer(self, searches: list[str]) -> None:
+        model = ToolChoiceAwareModel(messages=iter([sql(DRAFT_SQL, "c1"), search("q", "c2"),
+                                                    AIMessage(content="Done.")]))
         result = ask(build_agent(llm=model), "q")
+        assert [s.name for s in result.steps] == ["run_sql", "search_guide"]
+        assert searches == ["q"] and all("limit reached" not in s.output_preview for s in result.steps)
 
-        assert result.answer == "Own answer."
-        assert len(searches) == n_tools
-        assert model.tool_choices == [None] * (n_tools + 1)
-
-    def test_compliant_model_answering_at_the_limit_is_unaffected(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(tools, "retrieve", recording_retrieve([], Hit(3, 0.1, "x")))
-        replies = [tool_call("search_guide", {"query": f"q{i}"}, f"c{i}") for i in range(5)]
-        model = ToolChoiceAwareModel(messages=iter([*replies, AIMessage(content="Own answer.")]))
-        model.forced_reply = "Own answer."  # a compliant model would answer the same either way
-
+    def test_second_search_refused_then_sql_still_runs(self, searches: list[str]) -> None:
+        model = ToolChoiceAwareModel(messages=iter([search("q1", "c1"), search("q2", "c2"), sql(DRAFT_SQL, "c3"),
+                                                    AIMessage(content="Answer (PDF p. 52).")]))
         result = ask(build_agent(llm=model), "q")
+        assert searches == ["q1"]
+        assert result.steps[1].output_preview == SEARCH_REFUSAL
+        assert "AJ Dybantsa" in result.steps[2].output_preview
+        assert result.answer == "Answer (PDF p. 52)." and result.model_calls == 4
 
-        assert result.answer == "Own answer."
-        assert len(model.received) == 6
-
-    def test_parallel_calls_over_the_limit_are_blocked_then_answer_is_forced(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        searches: list[str] = []
-        monkeypatch.setattr(tools, "retrieve", recording_retrieve(searches, Hit(4, 0.1, "x")))
-        batch = AIMessage(content="", tool_calls=[
-            {"name": "search_guide", "args": {"query": f"p{i}"}, "id": f"p{i}", "type": "tool_call"} for i in range(7)
-        ])
-        model = ToolChoiceAwareModel(messages=iter([batch]))
-
+    def test_second_search_refused_then_model_answers(self, searches: list[str]) -> None:
+        model = ToolChoiceAwareModel(messages=iter([search("q1", "c1"), search("q2", "c2"),
+                                                    AIMessage(content="Not in the guide.")]))
         result = ask(build_agent(llm=model), "q")
+        assert searches == ["q1"] and result.answer == "Not in the guide." and result.model_calls == 3
 
-        assert len(searches) == 5
-        assert sum("Tool call limit exceeded" in s.output_preview for s in result.steps) == 2
-        assert model.tool_choices == [None, "none"]
-        assert result.answer == "Answer from what I found (PDF p. 1)."
-
-    def test_tool_calls_this_run_ignores_earlier_turns(self) -> None:
-        msgs: list[BaseMessage] = [
-            HumanMessage(content="old"),
-            ToolMessage(content="x", tool_call_id="a"),
-            AIMessage(content="old answer"),
-            HumanMessage(content="new"),
-            ToolMessage(content="y", tool_call_id="b"),
-            ToolMessage(content="z", tool_call_id="c", status="error"),
+    def test_sql_budget_refusal_points_to_search_when_it_is_unused(self) -> None:
+        model = ToolChoiceAwareModel(messages=iter([sql("SELECT 1", f"c{i}") for i in range(4)]))
+        result = ask(build_agent(llm=model), "q")
+        assert [s.output_preview for s in result.steps[3:]] == [
+            "SQL limit reached; use search_guide or answer from what you have"
         ]
-        assert agent.tool_calls_this_run(msgs) == 2
-        assert agent.tool_calls_this_run([HumanMessage(content="only")]) == 0
+        assert model.tool_choices == [None] * 4 + ["none"] and result.model_calls == 5
 
+    def test_model_that_keeps_requesting_tools_ends_with_forced_answer(self, searches: list[str]) -> None:
+        model = ToolChoiceAwareModel(messages=endless_searches())
+        result = ask(build_agent(llm=model), "q")
+        assert searches == ["q1"]
+        assert [s.output_preview for s in result.steps[1:]] == [SEARCH_REFUSAL] * 3
+        assert model.tool_choices == [None] * 4 + ["none"]
+        assert result.model_calls == agent.max_model_calls() == 5
+        assert result.answer == "Answer from what I found (PDF p. 1)."
+
+    def test_model_ignoring_tool_choice_hits_backstop_and_warns(
+        self, searches: list[str], caplog: pytest.LogCaptureFixture
+    ) -> None:
+        model = ScriptedChatModel(messages=endless_searches())
+        with caplog.at_level("WARNING", logger="agent"), pytest.raises(TooManyStepsError, match="16 steps") as exc:
+            ask(build_agent(llm=model), "q")
+        assert searches == ["q1"]
+        assert "despite tool_choice='none'" in caplog.text and "Recursion limit (16) reached" in caplog.text
+        assert exc.value.steps[0].name == "search_guide"
+        assert all("limit reached" in s.output_preview for s in exc.value.steps[1:])
+
+    def test_parallel_batch_is_capped_in_order(self, searches: list[str]) -> None:
+        model = ToolChoiceAwareModel(messages=iter([batch(*[("search_guide", {"query": f"p{i}"}) for i in range(7)])]))
+        result = ask(build_agent(llm=model), "q")
+        assert searches == ["p0"]
+        assert [s.output_preview for s in result.steps[1:]] == [SEARCH_REFUSAL] * 3 + [TOTAL_REFUSAL] * 3
+        assert model.tool_choices == [None, "none"] and result.model_calls == 2
+
+    def test_mixed_parallel_batch(self, searches: list[str]) -> None:
+        calls = [("search_guide", {"query": "s"}), *[("run_sql", {"sql": "SELECT 1"})] * 4]
+        model = ToolChoiceAwareModel(messages=iter([batch(*calls)]))
+        result = ask(build_agent(llm=model), "q")
+        assert searches == ["s"]
+        assert [("limit reached" in s.output_preview) for s in result.steps] == [False, False, False, False, True]
+        assert result.steps[-1].output_preview == TOTAL_REFUSAL
+
+    @pytest.mark.parametrize("total", [1, 2, 3, 4, 6])
+    def test_legitimate_worst_case_fits_exactly_3t_plus_3_steps(self, total: int) -> None:
+        """Every call allowed is the longest legitimate run: it needs exactly 3T + 3 steps (LangGraph counts the
+        input step), below the backstop recursion_limit(T) = 3T + 4."""
+
+        def run(limit: int) -> agent.AgentResult:
+            replies = [sql("SELECT 1", f"c{i}") for i in range(total)] + [AIMessage(content="never used")]
+            model = ToolChoiceAwareModel(messages=iter(replies))
+            graph = build_agent(llm=model, budgets=(total, total, total)).with_config(recursion_limit=limit)
+            return ask(graph, "q")
+
+        result = run(3 * total + 3)
+        assert result.model_calls == total + 1 and len(result.steps) == total
+        assert 3 * total + 3 < agent.recursion_limit(total)
+        with pytest.raises(TooManyStepsError):
+            run(3 * total + 2)
+
+    def test_budgets_from_environment(self, monkeypatch: pytest.MonkeyPatch, searches: list[str]) -> None:
+        monkeypatch.setenv("SEARCH_BUDGET", "2")
+        monkeypatch.setenv("TOTAL_TOOL_BUDGET", "2")
+        model = ToolChoiceAwareModel(messages=endless_searches())
+        graph = build_agent(llm=model)
+        result = ask(graph, "q")
+        assert searches == ["q1", "q2"] and result.model_calls == 3
+        assert cast(RunnableBinding[Any, Any], graph).config["recursion_limit"] == 10
+        prompt = content_text(model.received[0][0].content)
+        assert "at most 2 search_guide call(s), 3 run_sql call(s) and 2 tool calls in total" in prompt
+
+    @pytest.mark.parametrize("var", ["SEARCH_BUDGET", "SQL_BUDGET", "TOTAL_TOOL_BUDGET"])
+    @pytest.mark.parametrize("raw", ["0", "-1", "two", "1.5"])
+    def test_invalid_budget_is_a_config_error(self, monkeypatch: pytest.MonkeyPatch, var: str, raw: str) -> None:
+        monkeypatch.setenv(var, raw)
+        with pytest.raises(MissingConfigError, match=f"{var} must be a positive int"):
+            build_agent(llm=scripted(AIMessage(content="x")))
+
+    def test_attempt_counter_ignores_earlier_turns(self) -> None:
+        msgs: list[BaseMessage] = [
+            HumanMessage(content="old"), search("x", "a"), ToolMessage(content="x", tool_call_id="a"),
+            AIMessage(content="old answer"), HumanMessage(content="new"), batch(("run_sql", {"sql": "S"}),
+                                                                               ("search_guide", {"query": "y"})),
+            ToolMessage(content="y", tool_call_id="b0"), ToolMessage(content="z", tool_call_id="b1", status="error"),
+        ]
+        assert agent.tool_attempts_this_run(msgs) == {"run_sql": 1, "search_guide": 1}
+        assert agent.tool_calls_this_run(msgs) == 2
+
+
+class TestOffTopicGuard:
+    @pytest.mark.parametrize(
+        ("question", "off_topic"),
+        [
+            ("Who won the 2026 NFL Super Bowl?", True),
+            ("Who won the 2026 WNBA Finals?", True),
+            ("who won the stanley   cup last year", True),
+            ("Premier League standings?", True),
+            ("Who won the 2026 NBA Finals?", False),
+            ("How do NBA salaries compare to NFL salaries?", False),
+            ("Is NCAA football bigger than basketball?", False),
+            ("Who won the 2026 Premier League and how many NBA Finals has Boston won?", False),
+            ("Who has the most All-NBA selections?", False),
+            ("NCAA basketball champions", False),
+            ("Tell me about the MLBB esports league", False),
+            ("", False),
+            ("?!...", False),
+        ],
+    )
+    def test_is_off_topic(self, question: str, off_topic: bool) -> None:
+        assert agent.is_off_topic(question) is off_topic
+
+    @pytest.mark.parametrize("question", ["Who won the 2026 NFL Super Bowl?", "Who won the 2026 WNBA Finals?"])
+    def test_off_topic_question_makes_zero_model_calls(self, question: str) -> None:
+        model = scripted(AIMessage(content="should never be called"))
+        result = ask(build_agent(llm=model), question)
+        assert model.received == []
+        assert result.answer == "The 2026-27 NBA Guide covers the NBA only." == agent.OFFTOPIC_ANSWER
+        assert (result.model_calls, result.steps, result.input_tokens, result.output_tokens) == (0, [], 0, 0)
+        assert result.pages == [] and result.verified_pages == []
+
+    @pytest.mark.parametrize(
+        "question",
+        ["Who won the 2026 NBA Finals?", "How do NBA salaries compare to NFL salaries?", "?!..."],
+    )
+    def test_nba_and_neutral_questions_reach_the_model(self, question: str) -> None:
+        model = scripted(AIMessage(content="model answer"))
+        assert ask(build_agent(llm=model), question).answer == "model answer"
+        assert len(model.received) == 1
+
+    def test_empty_question_still_raises(self) -> None:
+        with pytest.raises(ValueError, match="empty"):
+            ask(build_agent(llm=scripted()), "   ")
+
+    def test_guard_can_be_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OFFTOPIC_GUARD", "0")
+        model = scripted(AIMessage(content="model answer"))
+        assert ask(build_agent(llm=model), "Who won the 2026 NFL Super Bowl?").answer == "model answer"
+
+    def test_invalid_guard_setting(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OFFTOPIC_GUARD", "yes")
+        with pytest.raises(MissingConfigError, match="OFFTOPIC_GUARD must be 0 or 1"):
+            ask(build_agent(llm=scripted()), "Who won the 2026 NFL Super Bowl?")
+
+    def test_main_shows_the_canned_answer(self, capsys: pytest.CaptureFixture[str]) -> None:
+        import main
+
+        assert main.answer_once(build_agent(llm=scripted()), "Who won the 2026 NFL Super Bowl?", verbose=True)[0] == 0
+        out = capsys.readouterr().out
+        assert out.startswith("The 2026-27 NBA Guide covers the NBA only.")
+        assert "(0 tool calls," in out
+
+
+class TestProviderPayloads:
     def test_gemini_payload_with_tool_choice_none_disables_function_calls(self) -> None:
         """Offline: the real ChatGoogleGenerativeAI request built for tool_choice="none" (no network)."""
         llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", api_key="offline-fake", max_retries=0)
