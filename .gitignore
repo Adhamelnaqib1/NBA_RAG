@@ -1,5 +1,7 @@
 # Environments & secrets
 .env
+.env*
+!.env.example
 .venv/
 env/
 venv/
@@ -16,3 +18,10 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# Source PDF and generated artifacts (kept on disk, not in git)
+*.pdf
+table_preview/
+table_report.md
+*.log
+nba_stats.backup.db

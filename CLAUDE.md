@@ -5,7 +5,9 @@ queried by a LangChain agent (main.py) that uses both.
 
 ## Rules (always)
 - Never read, print, log or edit .env. Never hardcode keys.
-- Two keys: GEMINI_EMBED_API_KEY (paid, embeddings only), GEMINI_LLM_API_KEY (free tier, chat LLM only).
+- Keys: embeddings use GEMINI_EMBED_API_KEY (paid Gemini key, embeddings only). The chat model uses NVIDIA_API_KEY
+  with LLM_PROVIDER=nvidia (default model nvidia/nemotron-3.5-super-vl-120b-a12b via ChatNVIDIA); Gemini is an
+  optional fallback (LLM_PROVIDER=gemini with GEMINI_LLM_API_KEY, free tier).
 - Make NO live Gemini calls (embeddings or LLM) without asking me first. Tests must be fully offline/mocked.
 - Never modify ./data, never run embed_data.py --reset, never run full ingestion without asking.
 - Never write to nba_stats.db until I say "load".

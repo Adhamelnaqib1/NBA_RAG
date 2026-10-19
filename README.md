@@ -78,6 +78,11 @@ flowchart LR
 | `tables.yaml` | Extraction spec and the agent-facing table descriptions | — | — | read by `extract_tables` and `agent` |
 | `test_sqlsafe.py` | Offline tests of the SQL safety layer (the only test file kept) | — | `sqlsafe` | — |
 
+**Runtime depends on two pipeline modules.** `agent.py` imports `extract_tables` (for `schema_text`) and
+`tools.py` imports `embed_data` (for `embed_texts`). The app never reads the PDF, but importing those modules pulls
+in their dependencies (pdfplumber, pandas, pypdf, tqdm, …), so `requirements.txt` includes the pipeline packages.
+Moving `schema_text` and `embed_texts` into small runtime modules would remove this coupling.
+
 Other files: `requirements.txt` (runtime + pipeline), `requirements-dev.txt` (mypy, ruff, pytest, type stubs),
 `.env.example`, `CLAUDE.md`, `table_report.md` and `table_preview/` (output of `extract_tables.py discover`,
 regenerable), `embed.log` (log of an embedding run).
@@ -121,6 +126,11 @@ flowchart TD
 | IDs | first 16 hex characters of SHA-1 of `source|page|text` (content hash) |
 
 `./data` also holds an older collection, `nba_guide` (3072 dimensions, 8,374 chunks), which the code does not use.
+It can be deleted to save disk space (this removes only that collection; check you no longer need it first):
+
+```bash
+.venv/bin/python -c "import chromadb; chromadb.PersistentClient(path='./data').delete_collection('nba_guide')"
+```
 
 ### SQLite (`nba_stats.db`)
 
@@ -338,6 +348,9 @@ python3 -m venv .venv
 .venv/bin/python query.py "most points in a single game" --k 5
 ```
 
+The PDF, `./data`, `nba_stats.db` and the discovery output are not in git (see `.gitignore`); a fresh clone needs
+`2026-27-NBA-Guide.pdf` placed in the project root and the two stores rebuilt as below (or copied in).
+
 ### Rebuilding the data
 
 Both stores are already built. Rebuilding embeds the whole guide with the paid Gemini key (one embedding call per
@@ -397,7 +410,7 @@ between runs):
 | All-NBA first team in 1997 | run_sql | 1 | 2 | 36.4 s | 104-109 | Hardaway, Hill, Jordan, Malone, Olajuwon (assumes 1996-97) |
 | Career of the most All-NBA first-team selections | run_sql, search_guide | 2 | 3 | 16.8 s | 111, 112, + 7 roster pages | LeBron James, 13 First Team |
 
-All answers matched the SQL ground truth. Earlier runs, before the budgets: Boston 7.8 s / 3 model calls, 2026
+All answers matched ground truth checked against the SQL tables or the PDF page text. Earlier runs, before the budgets: Boston 7.8 s / 3 model calls, 2026
 Finals 38.4 s, 1997 first team 8.4 s.
 
 ---
@@ -419,6 +432,12 @@ Finals 38.4 s, 1997 first team 8.4 s.
 - **Errors**: *quota* → wait; *config error* → check the named variable in `.env` (the key value is never shown);
   *model not found* → check `LLM_MODEL`; *did not answer in time* → retry or lower `LLM_TIMEOUT_SECONDS`;
   *needed more than 16 steps* → the model kept requesting tools; rephrase.
+- **Search queries can contain guessed terms.** The model does not always follow the "no guessed terms in search
+  queries" rule: in the career-question live check its search query included words from its own knowledge (team
+  names); the answer was still correct.
+- **Whole-table citations.** When a SQL query does not select `source_page`, the answer cites the Sources footer's
+  page range for the whole table (e.g. PDF pp. 104-109 instead of PDF p. 107). Such pages count as verified but are
+  less precise.
 - **A model id missing from the library's registry** makes `ChatNVIDIA` list the available models over the network
   when it is constructed, and it warns that inference may fail.
 
