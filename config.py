@@ -26,9 +26,17 @@ EMBED_MODEL: str = "gemini-embedding-001"
 EMBED_DIM: int = 1536
 DEFAULT_COLLECTION: str = "nba_guide__gemini-001__d1536"
 
-# Default model & paths
-DEFAULT_LLM_MODEL: str = "gemini-2.5-flash"
-LLM_MODEL: str = os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL)
+# Chat LLM provider, model and limits (embeddings always use Gemini with the paid key above)
+LLM_PROVIDERS: tuple[str, ...] = ("nvidia", "gemini")
+DEFAULT_LLM_PROVIDER: str = "nvidia"
+DEFAULT_LLM_MODELS: dict[str, str] = {
+    "nvidia": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+    "gemini": "gemini-2.5-flash",
+}
+LLM_API_KEY_VARS: dict[str, str] = {"nvidia": "NVIDIA_API_KEY", "gemini": "GEMINI_LLM_API_KEY"}
+DEFAULT_LLM_MAX_TOKENS: int = 4096
+DEFAULT_LLM_TIMEOUT_SECONDS: float = 120.0
+
 DATA_DIR: Path = Path(os.getenv("DATA_DIR", "./data"))
 DB_PATH: Path = Path(os.getenv("DB_PATH", "./nba_stats.db"))
 
@@ -72,10 +80,27 @@ def get_embed_api_key(required: bool = True) -> str:
     return ""
 
 
-def get_llm_api_key(required: bool = True) -> str:
-    """Retrieves the Gemini chat LLM API key.
+def get_llm_provider() -> str:
+    """LLM_PROVIDER, lowercased: "nvidia" (default) or "gemini".
 
-    Used strictly for chat LLM interactions (LangChain agent).
+    Raises:
+        ValueError: For any other value.
+    """
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower() or DEFAULT_LLM_PROVIDER
+    if provider not in LLM_PROVIDERS:
+        raise ValueError(f"LLM_PROVIDER must be one of {', '.join(LLM_PROVIDERS)}; got {provider!r}.")
+    return provider
+
+
+def get_llm_model() -> str:
+    """LLM_MODEL, or the default model for the current provider when unset."""
+    return os.getenv("LLM_MODEL", "").strip() or DEFAULT_LLM_MODELS[get_llm_provider()]
+
+
+def get_llm_api_key(required: bool = True) -> str:
+    """Retrieves the chat LLM API key for the current provider.
+
+    nvidia -> NVIDIA_API_KEY, gemini -> GEMINI_LLM_API_KEY (free tier). Never the paid embedding key.
 
     Args:
         required: Whether to raise a ValueError if no key is found.
@@ -84,18 +109,43 @@ def get_llm_api_key(required: bool = True) -> str:
         The API key string, or empty string if not required and missing.
 
     Raises:
-        ValueError: If required is True and the key is missing.
+        ValueError: If required is True and the key is missing (names the variable, never a value),
+            or if LLM_PROVIDER is invalid.
     """
-    key = os.getenv("GEMINI_LLM_API_KEY")
+    var = LLM_API_KEY_VARS[get_llm_provider()]
+    key = os.getenv(var)
     if key:
         return key
 
     if required:
         raise ValueError(
-            "Missing required environment variable 'GEMINI_LLM_API_KEY'. "
-            "Please set GEMINI_LLM_API_KEY in your environment or .env file."
+            f"Missing required environment variable '{var}'. "
+            f"Please set {var} in your environment or .env file."
         )
     return ""
+
+
+def _positive_number(var: str, default: float, cast: type[int | float]) -> Any:
+    raw = os.getenv(var, "").strip()
+    if not raw:
+        return cast(default)
+    try:
+        value = cast(raw)
+    except ValueError as e:
+        raise ValueError(f"{var} must be a positive {cast.__name__}, got {raw!r}.") from e
+    if value <= 0:
+        raise ValueError(f"{var} must be a positive {cast.__name__}, got {raw!r}.")
+    return value
+
+
+def get_llm_max_tokens() -> int:
+    """LLM_MAX_TOKENS (default 4096): output cap per model call; reasoning tokens may count toward it."""
+    return int(_positive_number("LLM_MAX_TOKENS", DEFAULT_LLM_MAX_TOKENS, int))
+
+
+def get_llm_timeout_seconds() -> float:
+    """LLM_TIMEOUT_SECONDS (default 120): HTTP timeout for one model call."""
+    return float(_positive_number("LLM_TIMEOUT_SECONDS", DEFAULT_LLM_TIMEOUT_SECONDS, float))
 
 
 @dataclass(frozen=True)
@@ -103,8 +153,9 @@ class Config:
     """Typed configuration container for NBA RAG pipeline."""
 
     gemini_embed_api_key: str
-    gemini_llm_api_key: str
-    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL))
+    llm_api_key: str
+    llm_provider: str = field(default_factory=get_llm_provider)
+    llm_model: str = field(default_factory=get_llm_model)
     data_dir: Path = DATA_DIR
     db_path: Path = DB_PATH
     collection_name: str = DEFAULT_COLLECTION
@@ -121,8 +172,9 @@ class Config:
         """
         return cls(
             gemini_embed_api_key=get_embed_api_key(required=True),
-            gemini_llm_api_key=get_llm_api_key(required=True),
-            llm_model=os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL),
+            llm_api_key=get_llm_api_key(required=True),
+            llm_provider=get_llm_provider(),
+            llm_model=get_llm_model(),
             data_dir=Path(os.getenv("DATA_DIR", "./data")),
             db_path=Path(os.getenv("DB_PATH", "./nba_stats.db")),
             collection_name=DEFAULT_COLLECTION,
@@ -147,11 +199,13 @@ def get_llm_temperature() -> float | None:
 def __getattr__(name: str) -> Any:
     """Dynamic attribute accessor for module-level constants.
 
-    Ensures fail-fast validation when GEMINI_EMBED_API_KEY or
-    GEMINI_LLM_API_KEY are accessed directly.
+    Ensures fail-fast validation when GEMINI_EMBED_API_KEY or the LLM key are accessed directly,
+    and reads LLM_MODEL at access time so it follows LLM_PROVIDER.
     """
     if name == "GEMINI_EMBED_API_KEY":
         return get_embed_api_key(required=True)
-    if name == "GEMINI_LLM_API_KEY":
+    if name == "LLM_API_KEY":
         return get_llm_api_key(required=True)
+    if name == "LLM_MODEL":
+        return get_llm_model()
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

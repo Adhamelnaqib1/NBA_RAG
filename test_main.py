@@ -88,7 +88,7 @@ class TestOneShot:
 
     def test_missing_key_exits_with_config_code(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert main.main(["q"]) == main.EXIT_CONFIG
-        assert "GEMINI_LLM_API_KEY" in capsys.readouterr().err
+        assert "NVIDIA_API_KEY" in capsys.readouterr().err
 
 
 class TestInteractive:

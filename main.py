@@ -18,12 +18,13 @@ import config
 from agent import (
     AgentError,
     AgentResult,
-    MissingConfigError,
+    ConfigError,
     QuotaExceededError,
     ToolStep,
     TooManyStepsError,
     ask,
     build_agent,
+    llm_label,
 )
 
 EXIT_OK = 0
@@ -67,6 +68,9 @@ def answer_once(graph: Runnable[Any, Any], question: str, verbose: bool,
     except QuotaExceededError as e:
         print(f"Quota: {e}", file=sys.stderr)
         return EXIT_QUOTA, None
+    except ConfigError as e:
+        print(f"Config error: {e}", file=sys.stderr)
+        return EXIT_CONFIG, None
     except TooManyStepsError as e:
         print(f"Stopped: {e}", file=sys.stderr)
         if e.steps:
@@ -81,7 +85,7 @@ def answer_once(graph: Runnable[Any, Any], question: str, verbose: bool,
 
 def interactive(graph: Runnable[Any, Any], verbose: bool) -> int:
     """Question loop with conversation history. Errors are reported and the loop continues."""
-    print(f"NBA Guide Q&A ({config.LLM_MODEL}). Type 'exit' to quit.")
+    print(f"NBA Guide Q&A ({llm_label()}). Type 'exit' to quit.")
     history: list[tuple[str, str]] = []
     while True:
         try:
@@ -112,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         graph = build_agent()
-    except MissingConfigError as e:
+    except ConfigError as e:
         print(f"Config error: {e}", file=sys.stderr)
         return EXIT_CONFIG
 

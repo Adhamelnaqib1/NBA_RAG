@@ -25,6 +25,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable, RunnableBinding
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai.chat_models import GoogleRateLimitError
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from pydantic import Field
 
 import agent
@@ -143,30 +144,69 @@ class TestBuildAgent:
         assert isinstance(graph, Runnable)
         assert {"model", "tools"} <= set(graph.get_graph().nodes)
 
-    def test_default_llm_uses_free_key_and_omits_temperature(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GEMINI_LLM_API_KEY", "free-key")
+    def test_default_provider_is_nvidia_with_its_key_and_limits(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
         monkeypatch.setenv("GEMINI_EMBED_API_KEY", "paid-key")
-        with patch("agent.ChatGoogleGenerativeAI", wraps=ChatGoogleGenerativeAI) as llm_cls:
+        with patch("agent.ChatNVIDIA", wraps=ChatNVIDIA) as llm_cls:
             graph = build_agent()
-        llm_cls.assert_called_once_with(model=config.LLM_MODEL, api_key="free-key", max_retries=5)
+        llm_cls.assert_called_once_with(
+            model="nvidia/nemotron-3.5-super-vl-120b-a12b", api_key="nvapi-test-key",
+            max_completion_tokens=4096, timeout=120.0, usage_telemetry_enabled=False,
+        )
         assert isinstance(graph, Runnable)
 
-    def test_temperature_passed_only_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_nvidia_settings_and_temperature_only_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+        monkeypatch.setenv("LLM_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b")
+        monkeypatch.setenv("LLM_TEMPERATURE", "0.2")
+        monkeypatch.setenv("LLM_MAX_TOKENS", "8192")
+        monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "60")
+        with patch("agent.ChatNVIDIA", wraps=ChatNVIDIA) as llm_cls:
+            llm = agent.make_llm()
+        llm_cls.assert_called_once_with(
+            model="nvidia/nemotron-3.5-super-vl-120b-a12b", api_key="nvapi-test-key",
+            max_completion_tokens=8192, timeout=60.0, usage_telemetry_enabled=False, temperature=0.2,
+        )
+        assert isinstance(llm, ChatNVIDIA) and llm.max_tokens == 8192
+
+    def test_gemini_fallback_uses_its_free_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "gemini")
+        monkeypatch.setenv("GEMINI_LLM_API_KEY", "free-key")
+        monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-unused")
+        with patch("agent.ChatGoogleGenerativeAI", wraps=ChatGoogleGenerativeAI) as llm_cls:
+            graph = build_agent()
+        llm_cls.assert_called_once_with(
+            model="gemini-2.5-flash", api_key="free-key", max_retries=5, max_tokens=4096, timeout=120.0
+        )
+        assert isinstance(graph, Runnable)
+
+    def test_gemini_temperature_passed_only_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "gemini")
         monkeypatch.setenv("GEMINI_LLM_API_KEY", "free-key")
         monkeypatch.setenv("LLM_TEMPERATURE", "0")
         with patch("agent.ChatGoogleGenerativeAI", wraps=ChatGoogleGenerativeAI) as llm_cls:
             build_agent()
-        llm_cls.assert_called_once_with(model=config.LLM_MODEL, api_key="free-key", max_retries=5, temperature=0.0)
+        assert llm_cls.call_args.kwargs["temperature"] == 0.0
 
-    def test_bad_temperature_raises_config_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GEMINI_LLM_API_KEY", "free-key")
-        monkeypatch.setenv("LLM_TEMPERATURE", "warm")
-        with pytest.raises(MissingConfigError, match="LLM_TEMPERATURE must be a number"):
+    @pytest.mark.parametrize(
+        ("env", "message"),
+        [
+            ({"NVIDIA_API_KEY": "k", "LLM_TEMPERATURE": "warm"}, "LLM_TEMPERATURE must be a number"),
+            ({"NVIDIA_API_KEY": "k", "LLM_MAX_TOKENS": "0"}, "LLM_MAX_TOKENS must be a positive int"),
+            ({"LLM_PROVIDER": "openai"}, "LLM_PROVIDER must be one of nvidia, gemini"),
+            ({}, "NVIDIA_API_KEY"),
+            ({"LLM_PROVIDER": "gemini", "NVIDIA_API_KEY": "nvapi-secret"}, "GEMINI_LLM_API_KEY"),
+        ],
+    )
+    def test_config_problems_raise_config_error(
+        self, monkeypatch: pytest.MonkeyPatch, env: dict[str, str], message: str
+    ) -> None:
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        with pytest.raises(MissingConfigError, match=message) as exc_info:
             build_agent()
-
-    def test_missing_llm_key_raises_config_error(self) -> None:
-        with pytest.raises(MissingConfigError, match="GEMINI_LLM_API_KEY"):
-            build_agent()
+        assert "secret" not in str(exc_info.value)
+        assert isinstance(exc_info.value, agent.ConfigError)
 
     def test_system_prompt_has_schema_descriptions_and_rules(self, db: Path) -> None:
         prompt = agent.build_system_prompt(db, "tables.yaml")
@@ -182,6 +222,8 @@ class TestBuildAgent:
         assert "search_guide at most 3 times" in prompt and "never repeat a" in prompt
         assert "ended in that year (1996-97), state that assumption" in prompt
         assert "comes from retrieved text and may be" in prompt
+        assert "never put an answer, name or number you guessed into a query" in prompt
+        assert '"New York", not "Knicks", unless a tool returned "Knicks"' in prompt
 
     def test_system_prompt_picks_up_new_tables_and_notes(self, tmp_path: Path) -> None:
         db = tmp_path / "with season.db"

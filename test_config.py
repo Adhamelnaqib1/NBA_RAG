@@ -37,13 +37,35 @@ class TestConfig:
         assert "GEMINI_EMBED_API_KEY" in msg
         assert "Missing required environment variable" in msg
 
-    def test_missing_llm_key_fails_fast(self) -> None:
-        """Asserts missing LLM key raises ValueError naming variable without secret leaking."""
+    @pytest.mark.parametrize(("provider", "var"), [(None, "NVIDIA_API_KEY"), ("nvidia", "NVIDIA_API_KEY"),
+                                                   ("gemini", "GEMINI_LLM_API_KEY"), (" Gemini ", "GEMINI_LLM_API_KEY")])
+    def test_missing_llm_key_names_the_provider_variable(
+        self, monkeypatch: pytest.MonkeyPatch, provider: str | None, var: str
+    ) -> None:
+        if provider is not None:
+            monkeypatch.setenv("LLM_PROVIDER", provider)
+        # The other provider's key is set and must not be used.
+        other = "GEMINI_LLM_API_KEY" if var == "NVIDIA_API_KEY" else "NVIDIA_API_KEY"
+        monkeypatch.setenv(other, "other-provider-secret")
         with pytest.raises(ValueError) as exc_info:
             config.get_llm_api_key(required=True)
         msg = str(exc_info.value)
-        assert "GEMINI_LLM_API_KEY" in msg
-        assert "Missing required environment variable" in msg
+        assert f"Missing required environment variable '{var}'" in msg
+        assert "secret" not in msg
+
+    @pytest.mark.parametrize(("provider", "var"), [("nvidia", "NVIDIA_API_KEY"), ("gemini", "GEMINI_LLM_API_KEY")])
+    def test_llm_key_follows_provider(self, monkeypatch: pytest.MonkeyPatch, provider: str, var: str) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", provider)
+        monkeypatch.setenv(var, f"{provider}-key")
+        assert config.get_llm_api_key() == f"{provider}-key"
+
+    def test_llm_provider_default_and_invalid(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert config.get_llm_provider() == "nvidia"
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
+        with pytest.raises(ValueError, match="LLM_PROVIDER must be one of nvidia, gemini; got 'openai'"):
+            config.get_llm_provider()
+        with pytest.raises(ValueError, match="LLM_PROVIDER"):
+            config.get_llm_api_key()
 
     def test_optional_keys_return_empty(self) -> None:
         assert config.get_embed_api_key(required=False) == ""
@@ -67,20 +89,59 @@ class TestConfig:
 
     def test_embed_and_llm_keys_are_separate(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GEMINI_EMBED_API_KEY", "paid")
+        monkeypatch.setenv("NVIDIA_API_KEY", "nim")
         monkeypatch.setenv("GEMINI_LLM_API_KEY", "free")
         assert config.get_embed_api_key() == "paid"
+        assert config.get_llm_api_key() == "nim"
+        monkeypatch.setenv("LLM_PROVIDER", "gemini")
         assert config.get_llm_api_key() == "free"
+        assert config.get_embed_api_key() == "paid"
 
-    def test_llm_model_default(self) -> None:
-        cfg = config.Config(gemini_embed_api_key="k1", gemini_llm_api_key="k2")
-        assert cfg.llm_model == config.DEFAULT_LLM_MODEL == "gemini-2.5-flash"
+    @pytest.mark.parametrize(("provider", "model"), [(None, "nvidia/nemotron-3.5-super-vl-120b-a12b"),
+                                                     ("gemini", "gemini-2.5-flash")])
+    def test_llm_model_default_follows_provider(
+        self, monkeypatch: pytest.MonkeyPatch, provider: str | None, model: str
+    ) -> None:
+        if provider is not None:
+            monkeypatch.setenv("LLM_PROVIDER", provider)
+        assert config.get_llm_model() == model
+        assert config.LLM_MODEL == model
+        cfg = config.Config(gemini_embed_api_key="k1", llm_api_key="k2")
+        assert (cfg.llm_provider, cfg.llm_model) == (provider or "nvidia", model)
 
     def test_llm_model_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LLM_MODEL", "gemini-2.0-flash")
+        monkeypatch.setenv("LLM_MODEL", "nvidia/some-new-model")
         monkeypatch.setenv("GEMINI_EMBED_API_KEY", "k1")
-        monkeypatch.setenv("GEMINI_LLM_API_KEY", "k2")
-        assert config.Config.from_env().llm_model == "gemini-2.0-flash"
-        assert config.Config(gemini_embed_api_key="k1", gemini_llm_api_key="k2").llm_model == "gemini-2.0-flash"
+        monkeypatch.setenv("NVIDIA_API_KEY", "k2")
+        loaded = config.Config.from_env()
+        assert (loaded.llm_provider, loaded.llm_model, loaded.llm_api_key) == ("nvidia", "nvidia/some-new-model", "k2")
+        assert config.LLM_MODEL == "nvidia/some-new-model"
+
+    @pytest.mark.parametrize(
+        ("var", "getter", "raw", "expected"),
+        [
+            ("LLM_MAX_TOKENS", "get_llm_max_tokens", None, 4096),
+            ("LLM_MAX_TOKENS", "get_llm_max_tokens", " 8192 ", 8192),
+            ("LLM_TIMEOUT_SECONDS", "get_llm_timeout_seconds", None, 120.0),
+            ("LLM_TIMEOUT_SECONDS", "get_llm_timeout_seconds", "45.5", 45.5),
+        ],
+    )
+    def test_llm_limits(
+        self, monkeypatch: pytest.MonkeyPatch, var: str, getter: str, raw: str | None, expected: float
+    ) -> None:
+        if raw is not None:
+            monkeypatch.setenv(var, raw)
+        assert getattr(config, getter)() == expected
+
+    @pytest.mark.parametrize(
+        ("var", "getter", "raw"),
+        [("LLM_MAX_TOKENS", "get_llm_max_tokens", "lots"), ("LLM_MAX_TOKENS", "get_llm_max_tokens", "0"),
+         ("LLM_MAX_TOKENS", "get_llm_max_tokens", "1.5"), ("LLM_TIMEOUT_SECONDS", "get_llm_timeout_seconds", "-1")],
+    )
+    def test_llm_limits_invalid(self, monkeypatch: pytest.MonkeyPatch, var: str, getter: str, raw: str) -> None:
+        monkeypatch.setenv(var, raw)
+        with pytest.raises(ValueError, match=f"{var} must be a positive"):
+            getattr(config, getter)()
 
     @pytest.mark.parametrize(("raw", "expected"), [(None, None), ("", None), ("  ", None), ("0", 0.0), (" 0.7 ", 0.7)])
     def test_llm_temperature(self, monkeypatch: pytest.MonkeyPatch, raw: str | None, expected: float | None) -> None:
@@ -97,7 +158,7 @@ class TestConfig:
         """Tests paths and default collection resolution."""
         cfg = config.Config(
             gemini_embed_api_key="k1",
-            gemini_llm_api_key="k2",
+            llm_api_key="k2",
             data_dir=Path("./test_data"),
             db_path=Path("./test.db"),
         )
@@ -109,8 +170,8 @@ class TestConfig:
         """Tests module attribute access fails fast if keys are missing."""
         with pytest.raises(ValueError, match="GEMINI_EMBED_API_KEY"):
             _ = config.GEMINI_EMBED_API_KEY
-        with pytest.raises(ValueError, match="GEMINI_LLM_API_KEY"):
-            _ = config.GEMINI_LLM_API_KEY
+        with pytest.raises(ValueError, match="NVIDIA_API_KEY"):
+            _ = config.LLM_API_KEY
 
 
 class TestEnvIsolation:
@@ -123,6 +184,6 @@ class TestEnvIsolation:
     @pytest.mark.usefixtures("reloaded_config")
     def test_reimport_keeps_defaults(self) -> None:
         assert "LLM_MODEL" not in os.environ
-        assert config.LLM_MODEL == config.DEFAULT_LLM_MODEL
+        assert config.LLM_MODEL == config.DEFAULT_LLM_MODELS["nvidia"]
         assert config.DB_PATH == Path("./nba_stats.db")
         assert config.get_llm_api_key(required=False) == ""

@@ -1,8 +1,9 @@
 """NBA Guide agent: a LangChain create_agent graph over search_guide and run_sql, shared by CLI and UI.
 
-build_agent() wires ChatGoogleGenerativeAI (free LLM key) to the tools with a system prompt that
-embeds the live SQLite schema; ask() runs one question and returns the answer, the tool steps,
-the cited PDF pages and the latency.
+make_llm() builds the chat model for LLM_PROVIDER (ChatNVIDIA by default, ChatGoogleGenerativeAI as a
+fallback); build_agent() wires it to the tools with a system prompt that embeds the live SQLite schema;
+ask() runs one question and returns the answer, the tool steps, the cited PDF pages, tokens and latency.
+Embeddings are separate and always use Gemini with the paid key (tools.retrieve).
 """
 
 from __future__ import annotations
@@ -10,11 +11,12 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import requests
 import yaml
 from google.genai.errors import APIError
 from langchain.agents import create_agent
@@ -23,13 +25,20 @@ from langchain.agents.middleware import (
     AgentState,
     ModelRequest,
     ModelResponse,
+    ModelRetryMiddleware,
     ToolCallLimitMiddleware,
 )
-from langchain_core.exceptions import ModelRateLimitError
+from langchain_core.exceptions import (
+    ModelAuthenticationError,
+    ModelNotFoundError,
+    ModelPermissionDeniedError,
+    ModelRateLimitError,
+)
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import Runnable
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langgraph.errors import GraphRecursionError
 
 import config
@@ -44,6 +53,13 @@ RECURSION_LIMIT: int = 21
 """Graph-step backstop. Each tool round is 3 steps (model, limit check, tools): 5 rounds (15) + the forced
 answer (2) = 17 fit. With ForceAnswerAfterToolLimit a question makes at most TOOL_CALL_LIMIT + 1 = 6 model
 calls; only a model that ignored tool_choice="none" could reach the backstop."""
+MODEL_RETRIES: int = 5
+"""Retries per model call for providers without built-in retries (ChatNVIDIA), via ModelRetryMiddleware."""
+RETRY_INITIAL_DELAY: float = 2.0
+RETRY_MAX_DELAY: float = 30.0
+RETRYABLE_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+_NO_BUILTIN_RETRIES: tuple[type[BaseChatModel], ...] = (ChatNVIDIA,)
+"""Chat model classes that get ModelRetryMiddleware because they cannot retry by themselves."""
 HISTORY_TURNS: int = 6
 PREVIEW_CHARS: int = 300
 SPEC_PATH: Path = Path("tables.yaml")
@@ -52,6 +68,9 @@ _PAGE_CITATION_RE = re.compile(r"PDF p\.\s*(\d+)")
 _PASSAGE_HEADER_RE = re.compile(r"^--- PDF p\. (\d+) ", re.MULTILINE)
 _MD_CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
 _HTTP_429_RE = re.compile(r"\b429\b")
+_STATUS_PREFIX_RE = re.compile(r"^\s*\[(\d{3})\]")
+"""ChatNVIDIA raises plain Exception("[429] Too Many Requests\\n...") with the HTTP status in brackets."""
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 SYSTEM_PROMPT_TEMPLATE = """\
 You answer questions about the 2026-27 NBA Guide (a PDF) using two tools.
@@ -82,9 +101,13 @@ query and retry once; if it fails again, say so and use search_guide instead.
 6. Searching: use search_guide at most 3 times per question, and vary the query each time; never repeat a \
 search. If results repeat or still lack the answer, stop and say what was and was not found, citing any \
 partial information.
-7. Seasons are written like "1996-97". If the user gives a single year such as 1997, assume the season that \
+7. Search queries may contain only terms from the user's question (plus generic words such as "record" or \
+"All-NBA"); never put an answer, name or number you guessed into a query.
+8. Use names exactly as they appear in tool output. Do not add nicknames or details from memory: write \
+"New York", not "Knicks", unless a tool returned "Knicks".
+9. Seasons are written like "1996-97". If the user gives a single year such as 1997, assume the season that \
 ended in that year (1996-97), state that assumption in your answer, and mention the alternative (1997-98).
-8. Be concise.
+10. Be concise.
 
 TABLE NOTES
 {descriptions}
@@ -110,8 +133,12 @@ class TooManyStepsError(AgentError):
         self.steps: list[ToolStep] = steps or []
 
 
-class MissingConfigError(AgentError):
-    """A required API key or setting is missing."""
+class ConfigError(AgentError):
+    """The LLM configuration is wrong: missing or rejected key, unknown model or bad setting."""
+
+
+class MissingConfigError(ConfigError):
+    """A required API key or setting is missing or invalid."""
 
 
 @dataclass(frozen=True)
@@ -138,6 +165,9 @@ class AgentResult:
     """Cited pages that no tool returned (possible hallucinated citations)."""
     model_calls: int = 0
     """LLM responses in this run (one per model call)."""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    """Token totals over this run's model calls, from usage_metadata (0 when the provider reports none)."""
 
 
 def table_descriptions(spec_path: str | Path = SPEC_PATH) -> str:
@@ -173,8 +203,8 @@ def tool_calls_this_run(messages: Sequence[BaseMessage]) -> int:
 class ForceAnswerAfterToolLimit(AgentMiddleware[AgentState[Any], Any, Any]):
     """Once `limit` tool calls have been made in this run, the next model call gets tool_choice="none".
 
-    For Gemini that sets function_calling_config.mode = NONE, so the model must answer in text from the
-    results it already has. Tool declarations stay in the request, keeping earlier function calls in the
+    Gemini maps that to function_calling_config.mode = NONE and ChatNVIDIA sends "tool_choice": "none"
+    (OpenAI-style), so the model must answer in text from the results it already has. Tool declarations stay in the request, keeping earlier function calls in the
     history valid. ToolCallLimitMiddleware alone only blocks extra calls; it cannot stop a model that
     keeps asking.
     """
@@ -188,37 +218,86 @@ class ForceAnswerAfterToolLimit(AgentMiddleware[AgentState[Any], Any, Any]):
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
     ) -> ModelResponse[Any]:
-        if tool_calls_this_run(request.messages) >= self.limit:
+        forced = tool_calls_this_run(request.messages) >= self.limit
+        if forced:
             logger.info("Tool call limit (%d) reached; forcing a text answer.", self.limit)
             request = request.override(tool_choice="none")
-        return handler(request)
+        response = handler(request)
+        if forced and any(isinstance(m, AIMessage) and m.tool_calls for m in response.result):
+            logger.warning(
+                "Model requested tools despite tool_choice='none'; the recursion limit (%d) is the backstop.",
+                RECURSION_LIMIT,
+            )
+        return response
+
+
+def make_llm() -> BaseChatModel:
+    """Chat model for LLM_PROVIDER: ChatNVIDIA (NVIDIA_API_KEY) or ChatGoogleGenerativeAI (GEMINI_LLM_API_KEY).
+
+    temperature is passed only when LLM_TEMPERATURE is set; LLM_MAX_TOKENS and LLM_TIMEOUT_SECONDS apply to
+    both providers. ChatNVIDIA has no retry setting, so build_agent() adds ModelRetryMiddleware for it.
+
+    Raises:
+        MissingConfigError: If the provider is unknown, its key is missing, or a numeric setting is invalid.
+    """
+    try:
+        provider = config.get_llm_provider()
+        model = config.get_llm_model()
+        api_key = config.get_llm_api_key(required=True)
+        temperature = config.get_llm_temperature()
+        max_tokens = config.get_llm_max_tokens()
+        timeout = config.get_llm_timeout_seconds()
+    except ValueError as e:
+        raise MissingConfigError(str(e)) from e
+    options: dict[str, Any] = {} if temperature is None else {"temperature": temperature}
+
+    if provider == "nvidia":
+        return ChatNVIDIA(
+            model=model,
+            api_key=api_key,
+            max_completion_tokens=max_tokens,
+            timeout=timeout,
+            usage_telemetry_enabled=False,
+            **options,
+        )
+    return ChatGoogleGenerativeAI(
+        model=model, api_key=api_key, max_retries=5, max_tokens=max_tokens, timeout=timeout, **options
+    )
 
 
 def build_agent(
     llm: BaseChatModel | None = None,
     db_path: str | Path | None = None,
     spec_path: str | Path = SPEC_PATH,
+    model_retries: int | None = None,
 ) -> Runnable[Any, Any]:
-    """Builds the LangChain agent. Without `llm`, uses Gemini via the FREE LLM key.
+    """Builds the LangChain agent; without `llm`, uses make_llm() for the configured provider.
 
-    temperature is passed only when LLM_TEMPERATURE is set; some models ignore it and warn on every call.
+    `model_retries` defaults to MODEL_RETRIES for ChatNVIDIA (which has no built-in retries) and 0 otherwise
+    (ChatGoogleGenerativeAI retries internally). Only rate limits, 5xx and timeouts are retried.
 
     Raises:
-        MissingConfigError: If GEMINI_LLM_API_KEY is missing or LLM_TEMPERATURE is not a number.
+        MissingConfigError: If the provider, key or a setting is missing or invalid.
     """
     if llm is None:
-        try:
-            api_key = config.get_llm_api_key(required=True)
-            temperature = config.get_llm_temperature()
-        except ValueError as e:
-            raise MissingConfigError(str(e)) from e
-        options: dict[str, Any] = {} if temperature is None else {"temperature": temperature}
-        llm = ChatGoogleGenerativeAI(model=config.LLM_MODEL, api_key=api_key, max_retries=5, **options)
+        llm = make_llm()
+    if model_retries is not None:
+        retries = model_retries
+    else:
+        retries = MODEL_RETRIES if isinstance(llm, _NO_BUILTIN_RETRIES) else 0
 
     middleware: list[AgentMiddleware[Any, Any, Any]] = [
         ToolCallLimitMiddleware(run_limit=TOOL_CALL_LIMIT),
         ForceAnswerAfterToolLimit(limit=TOOL_CALL_LIMIT),
     ]
+    if retries > 0:
+        middleware.append(ModelRetryMiddleware(
+            max_retries=retries,
+            retry_on=is_retryable_llm_error,
+            on_failure="error",
+            initial_delay=RETRY_INITIAL_DELAY,
+            max_delay=RETRY_MAX_DELAY,
+        ))
     return create_agent(
         llm,
         [search_guide, run_sql],
@@ -228,7 +307,10 @@ def build_agent(
 
 
 def content_text(content: str | list[str | dict[str, Any]]) -> str:
-    """Joins the text of a message's content, which may be a string or a list of content blocks."""
+    """Joins the text of a message's content, which may be a string or a list of content blocks.
+
+    Only "text" blocks count: reasoning/thinking blocks are ignored.
+    """
     if isinstance(content, str):
         return content
     parts: list[str] = []
@@ -240,25 +322,111 @@ def content_text(content: str | list[str | dict[str, Any]]) -> str:
     return "".join(parts)
 
 
+def strip_reasoning(text: str) -> str:
+    """Removes reasoning-model scratchpad text: <think>...</think> blocks, text before a lone </think>,
+    and an unclosed trailing <think>."""
+    text = _THINK_BLOCK_RE.sub("", text)
+    lower = text.lower()
+    if "</think>" in lower:
+        text = text[lower.rindex("</think>") + len("</think>"):]
+    lower = text.lower()
+    if "<think>" in lower:
+        text = text[:lower.index("<think>")]
+    return text.strip()
+
+
+def answer_text(message: AIMessage) -> str:
+    """The user-facing answer of an AIMessage: text blocks only, reasoning stripped.
+
+    additional_kwargs (e.g. reasoning_content) is never read.
+    """
+    return strip_reasoning(content_text(message.content))
+
+
 def cited_pages(text: str) -> list[int]:
     """PDF page numbers cited as "PDF p. N" in `text`, unique, in order of first appearance."""
     return list(dict.fromkeys(int(n) for n in _PAGE_CITATION_RE.findall(text)))
 
 
-def _is_quota_error(exc: BaseException) -> bool:
+def _exception_chain(exc: BaseException) -> Iterator[BaseException]:
     seen: set[int] = set()
     current: BaseException | None = exc
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        if isinstance(current, ModelRateLimitError):
-            return True
-        if isinstance(current, APIError) and current.code == 429:
-            return True
-        text = str(current)
-        if "RESOURCE_EXHAUSTED" in text or _HTTP_429_RE.search(text):
-            return True
+        yield current
         current = current.__cause__ or current.__context__
+
+
+_TYPED_STATUSES: tuple[tuple[type[BaseException], int], ...] = (
+    (ModelRateLimitError, 429),
+    (ModelAuthenticationError, 401),
+    (ModelPermissionDeniedError, 403),
+    (ModelNotFoundError, 404),
+)
+
+
+def llm_http_status(exc: BaseException) -> int | None:
+    """HTTP status of a model-call failure: Gemini APIError.code, LangChain typed model errors, or the
+    "[NNN] ..." prefix ChatNVIDIA puts on its plain Exception messages."""
+    for e in _exception_chain(exc):
+        if isinstance(e, APIError) and e.code:
+            return int(e.code)
+        for cls, status in _TYPED_STATUSES:
+            if isinstance(e, cls):
+                return status
+        if match := _STATUS_PREFIX_RE.match(str(e)):
+            return int(match.group(1))
+    return None
+
+
+def _is_quota_error(exc: BaseException) -> bool:
+    if llm_http_status(exc) in (402, 429):
+        return True
+    for e in _exception_chain(exc):
+        text = str(e)
+        if "RESOURCE_EXHAUSTED" in text or "Too Many Requests" in text or _HTTP_429_RE.search(text):
+            return True
     return False
+
+
+def is_retryable_llm_error(exc: Exception) -> bool:
+    """Retry rate limits, 5xx and network timeouts; never auth, not-found or bad-request errors."""
+    if any(isinstance(e, (requests.Timeout, requests.ConnectionError, TimeoutError)) for e in _exception_chain(exc)):
+        return True
+    return llm_http_status(exc) in RETRYABLE_STATUSES or _is_quota_error(exc)
+
+
+def _llm_identity() -> tuple[str, str, str]:
+    """(provider, model, key variable) for error messages; never the key value."""
+    try:
+        provider = config.get_llm_provider()
+    except ValueError:
+        return "configured", "unknown", "the LLM API key"
+    return provider, config.get_llm_model(), config.LLM_API_KEY_VARS[provider]
+
+
+def llm_label() -> str:
+    """"provider / model" for display (CLI, smoke test, UI); never includes a key."""
+    provider, model, _ = _llm_identity()
+    return f"{provider} / {model}"
+
+
+def map_llm_error(exc: Exception) -> AgentError | None:
+    """Translates a provider failure into QuotaExceededError or ConfigError; None if it is something else."""
+    provider, model, key_var = _llm_identity()
+    if _is_quota_error(exc):
+        return QuotaExceededError(
+            f"The {provider} LLM quota or rate limit was hit (HTTP 429). Wait a minute and try again."
+        )
+    status = llm_http_status(exc)
+    if status in (401, 403):
+        return ConfigError(f"The {provider} API rejected the LLM API key (HTTP {status}). Check {key_var}.")
+    text = str(exc).lower()
+    if status == 404 or ("model" in text and ("not found" in text or "does not exist" in text)):
+        return ConfigError(
+            f"Model '{model}' was not found by the {provider} API (HTTP {status or 404}). Check LLM_MODEL."
+        )
+    return None
 
 
 def history_messages(history: list[tuple[str, str]] | None) -> list[BaseMessage]:
@@ -313,7 +481,8 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
     """Runs one question through the agent.
 
     Raises:
-        QuotaExceededError: On HTTP 429 / RESOURCE_EXHAUSTED from the model provider.
+        QuotaExceededError: On HTTP 429/402 / RESOURCE_EXHAUSTED from the model provider.
+        ConfigError: If the provider rejects the key (401/403) or does not know the model (404).
         TooManyStepsError: If the agent needs more than RECURSION_LIMIT graph steps (carries the steps so far).
         AgentError: If the agent finishes without a text answer.
     """
@@ -330,15 +499,15 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
         ):
             pass
     except GraphRecursionError as e:
+        logger.warning("Recursion limit (%d) reached: the model kept requesting tools.", RECURSION_LIMIT)
         raise TooManyStepsError(
             f"The agent needed more than {RECURSION_LIMIT} steps and was stopped. Try a more specific question.",
             steps=_collect_steps(state["messages"][len(inputs):]),
         ) from e
     except Exception as e:
-        if _is_quota_error(e):
-            raise QuotaExceededError(
-                "The free Gemini LLM quota or rate limit was hit (HTTP 429). Wait a minute and try again."
-            ) from e
+        mapped = map_llm_error(e)
+        if mapped is not None:
+            raise mapped from e
         raise
     seconds = time.perf_counter() - start
 
@@ -347,12 +516,13 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
         (m for m in reversed(new_messages) if isinstance(m, AIMessage) and not m.tool_calls),
         None,
     )
-    answer = content_text(final.content).strip() if final is not None else ""
+    answer = answer_text(final) if final is not None else ""
     if not answer:
         raise AgentError("The agent finished without an answer.")
 
     steps = _collect_steps(new_messages)
     pages = cited_pages(answer)
+    usage = [m.usage_metadata for m in new_messages if isinstance(m, AIMessage) and m.usage_metadata]
     retrieved = {p for step in steps for p in step.pages}
     return AgentResult(
         answer=answer,
@@ -362,4 +532,6 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
         verified_pages=[p for p in pages if p in retrieved],
         unverified_pages=[p for p in pages if p not in retrieved],
         model_calls=sum(isinstance(m, AIMessage) for m in new_messages),
+        input_tokens=sum(u.get("input_tokens", 0) for u in usage),
+        output_tokens=sum(u.get("output_tokens", 0) for u in usage),
     )

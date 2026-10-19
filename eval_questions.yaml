@@ -116,3 +116,25 @@ questions:
     expected_pages: [180, 102]
     verified: true
     note: "nba_finals p. 180 + Finals MVP list p. 102"
+
+  # --- All-NBA by season (all_nba_by_season, PDF pp. 104-109) ---
+  - id: a1
+    category: numeric
+    question: "Who was on the 1996-97 All-NBA first team?"
+    expected_pages: [107]
+    verified: false
+    note: "all_nba_by_season, 1996-97 block on p. 107"
+
+  - id: a2
+    category: numeric
+    question: "How many times has LeBron James made the All-NBA first team?"
+    expected_pages: [111, 109]
+    verified: false
+    note: "all_nba_by_player p. 111 or all_nba_by_season; SQL shows his First-team seasons on pp. 108 (2005-06..2013-14) and 109"
+
+  - id: a3
+    category: numeric
+    question: "Who made the 2025-26 All-NBA third team?"
+    expected_pages: [109]
+    verified: false
+    note: "all_nba_by_season, 2025-26 block on p. 109"

@@ -126,11 +126,11 @@ class TestReport:
 class TestLoadQuestions:
     def test_repo_questions_file(self) -> None:
         qs = load_questions(Path(__file__).parent / "eval_questions.yaml")
-        assert len(qs) == 15
+        assert len(qs) == 18
         assert {c: sum(q.category == c for q in qs) for c in eval_retrieval.CATEGORIES} == {
-            "narrative": 5, "numeric": 5, "mixed": 5,
+            "narrative": 5, "numeric": 8, "mixed": 5,
         }
-        assert len({q.id for q in qs}) == 15
+        assert len({q.id for q in qs}) == 18
         assert all(q.expected_pages for q in qs)
 
     @pytest.mark.parametrize(
@@ -161,7 +161,7 @@ class TestMain:
     def test_check_makes_no_calls(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert eval_retrieval.main(["--check"]) == 0
         out = capsys.readouterr().out
-        assert "15 questions (narrative=5, numeric=5, mixed=5); 15-30 embedding calls on the PAID key, 0 LLM calls." in out
+        assert "18 questions (narrative=5, numeric=8, mixed=5); 18-36 embedding calls on the PAID key, 0 LLM calls." in out
 
     def test_declined_confirmation_makes_no_calls(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("builtins.input", lambda prompt: "n")
