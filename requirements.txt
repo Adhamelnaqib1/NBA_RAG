@@ -1,9 +1,12 @@
+# Runtime (app, CLI, agent) and build pipeline. Each package is imported by a kept file, except
+# tabulate, which pandas.DataFrame.to_markdown() needs at runtime (extract_tables.schema_text).
 chromadb
 numpy
 google-genai
 pypdf
 python-dotenv
 tqdm
+requests
 langchain
 langchain-core
 langchain-google-genai
@@ -12,8 +15,5 @@ langgraph
 pdfplumber
 pandas
 pyyaml
-streamlit
 tabulate
-pytest
-ruff
-mypy
+streamlit

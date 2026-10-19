@@ -1,0 +1,7 @@
+# Development tools: type checking, linting, and the remaining SQL-safety tests (test_sqlsafe.py).
+-r requirements.txt
+mypy
+ruff
+pytest
+types-PyYAML
+types-tqdm

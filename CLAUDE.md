@@ -10,7 +10,10 @@ queried by a LangChain agent (main.py) that uses both.
 - Never modify ./data, never run embed_data.py --reset, never run full ingestion without asking.
 - Never write to nba_stats.db until I say "load".
 - Python 3.10+, full type hints, no bare except, logging not print (except CLI output).
-- Before finishing any task run: `mypy .` (plain, no --follow-imports=skip), `ruff check .`, `pytest -q`, and paste the real output.
+- Before finishing any task run: `mypy .` (plain, no --follow-imports=skip) and `ruff check .`, and paste the real output.
+- The old test suite and eval files (test_*.py except test_sqlsafe.py, conftest.py, eval_retrieval.py,
+  eval_questions.yaml, smoke_test.py) were removed in the cleanup and live in git tag `pre-cleanup`
+  (restore one with `git checkout pre-cleanup -- <file>`). Dev tools are in requirements-dev.txt.
 - Work one numbered step at a time and stop for my "continue".
 
 ## Stack (installed)
