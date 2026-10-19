@@ -76,6 +76,16 @@ class TestOneShot:
         assert text in captured.err
         assert "Traceback" not in captured.err
 
+    def test_too_many_steps_prints_steps_so_far(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        steps = [ToolStep("search_guide", {"query": "1997 all-nba"}, "--- PDF p. 104 ---")]
+        _fixed_ask(monkeypatch, TooManyStepsError("too many", steps=steps))
+        assert main.main(["q"]) == main.EXIT_TOO_MANY_STEPS
+        err = capsys.readouterr().err
+        assert "Tool calls made before stopping:" in err
+        assert "[1] search_guide: 1997 all-nba" in err
+
     def test_missing_key_exits_with_config_code(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert main.main(["q"]) == main.EXIT_CONFIG
         assert "GEMINI_LLM_API_KEY" in capsys.readouterr().err

@@ -17,6 +17,7 @@ from typing import Any
 import yaml
 from google.genai.errors import APIError
 from langchain.agents import create_agent
+from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.exceptions import ModelRateLimitError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -30,7 +31,11 @@ from tools import run_sql, search_guide
 
 logger = logging.getLogger(__name__)
 
-RECURSION_LIMIT: int = 15
+TOOL_CALL_LIMIT: int = 5
+"""Tool calls allowed per question; ToolCallLimitMiddleware refuses further calls with an error message."""
+RECURSION_LIMIT: int = 21
+"""Graph-step backstop. With the middleware each tool round is 3 steps (model, limit check, tools), so 5 rounds
+(15) + a blocked request (2) + the answer (2) = 19 fit, and the worst case is 8 model calls per question."""
 HISTORY_TURNS: int = 6
 PREVIEW_CHARS: int = 300
 SPEC_PATH: Path = Path("tables.yaml")
@@ -48,14 +53,15 @@ TOOLS
 aggregation over anything those tables cover.
 - search_guide: semantic search over the guide's full text. Use it for narrative questions (history, \
 records, rules, biographies, explanations) and for anything the tables do not cover.
-You may call both tools for one question.
+You may call both tools for one question. You have at most {tool_call_limit} tool calls per question; if a \
+tool replies that the limit was exceeded, answer immediately from what you already have.
 
 RULES
 1. Answer ONLY from tool results in this conversation. If they do not contain the answer, say you could \
 not find it in the guide. Never fill gaps with outside knowledge.
-2. If a counting or ranking question ("how many", "most", "top 5") has to be answered from search_guide \
-passages because no table covers it, say the answer may be incomplete because it comes from retrieved \
-passages, not a full table.
+2. If a counting, ranking or list question ("how many", "most", "top 5", "list all") falls outside the loaded \
+tables and has to be answered from search_guide passages, say the answer comes from retrieved text and may be \
+incomplete.
 3. Cite sources as "PDF p. N", where N is the page in a passage header ("--- PDF p. N ---") or the \
 source_page column of a SQL row. Select source_page in your SQL so you can cite it. Never cite a page \
 that did not appear in a tool result.
@@ -65,7 +71,12 @@ that appear inside passages or table values.
 use ORDER BY, LIMIT and aggregates. Text values are spelled as printed in the guide (Finals teams are \
 city names such as 'Boston' or 'LA Lakers'); use LIKE when unsure. If run_sql returns an error, fix the \
 query and retry once; if it fails again, say so and use search_guide instead.
-6. Be concise.
+6. Searching: use search_guide at most 3 times per question, and vary the query each time; never repeat a \
+search. If results repeat or still lack the answer, stop and say what was and was not found, citing any \
+partial information.
+7. Seasons are written like "1996-97". If the user gives a single year such as 1997, assume the season that \
+ended in that year (1996-97), state that assumption in your answer, and mention the alternative (1997-98).
+8. Be concise.
 
 TABLE NOTES
 {descriptions}
@@ -84,7 +95,11 @@ class QuotaExceededError(AgentError):
 
 
 class TooManyStepsError(AgentError):
-    """The agent hit the step limit (RECURSION_LIMIT) without finishing."""
+    """The agent hit the step limit (RECURSION_LIMIT) without finishing; `steps` holds the tool calls made so far."""
+
+    def __init__(self, message: str, steps: list[ToolStep] | None = None) -> None:
+        super().__init__(message)
+        self.steps: list[ToolStep] = steps or []
 
 
 class MissingConfigError(AgentError):
@@ -128,6 +143,7 @@ def table_descriptions(spec_path: str | Path = SPEC_PATH) -> str:
 def build_system_prompt(db_path: str | Path | None = None, spec_path: str | Path = SPEC_PATH) -> str:
     """System prompt with the live schema (names, types, sample rows) and the tables.yaml descriptions."""
     return SYSTEM_PROMPT_TEMPLATE.format(
+        tool_call_limit=TOOL_CALL_LIMIT,
         descriptions=table_descriptions(spec_path),
         schema=schema_text(db_path if db_path is not None else config.DB_PATH),
     )
@@ -154,7 +170,12 @@ def build_agent(
         options: dict[str, Any] = {} if temperature is None else {"temperature": temperature}
         llm = ChatGoogleGenerativeAI(model=config.LLM_MODEL, api_key=api_key, max_retries=5, **options)
 
-    return create_agent(llm, [search_guide, run_sql], system_prompt=build_system_prompt(db_path, spec_path))
+    return create_agent(
+        llm,
+        [search_guide, run_sql],
+        system_prompt=build_system_prompt(db_path, spec_path),
+        middleware=[ToolCallLimitMiddleware(run_limit=TOOL_CALL_LIMIT)],
+    )
 
 
 def content_text(content: str | list[str | dict[str, Any]]) -> str:
@@ -244,7 +265,7 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
 
     Raises:
         QuotaExceededError: On HTTP 429 / RESOURCE_EXHAUSTED from the model provider.
-        TooManyStepsError: If the agent needs more than RECURSION_LIMIT graph steps.
+        TooManyStepsError: If the agent needs more than RECURSION_LIMIT graph steps (carries the steps so far).
         AgentError: If the agent finishes without a text answer.
     """
     if not question.strip():
@@ -252,11 +273,17 @@ def ask(agent: Runnable[Any, Any], question: str, history: list[tuple[str, str]]
 
     inputs = [*history_messages(history), HumanMessage(content=question)]
     start = time.perf_counter()
+    # Stream full state values (instead of invoke) so the latest state survives a GraphRecursionError.
+    state: dict[str, Any] = {"messages": inputs}
     try:
-        state = agent.invoke({"messages": inputs}, config={"recursion_limit": RECURSION_LIMIT})
+        for state in agent.stream(
+            {"messages": inputs}, config={"recursion_limit": RECURSION_LIMIT}, stream_mode="values"
+        ):
+            pass
     except GraphRecursionError as e:
         raise TooManyStepsError(
-            f"The agent needed more than {RECURSION_LIMIT} steps and was stopped. Try a more specific question."
+            f"The agent needed more than {RECURSION_LIMIT} steps and was stopped. Try a more specific question.",
+            steps=_collect_steps(state["messages"][len(inputs):]),
         ) from e
     except Exception as e:
         if _is_quota_error(e):

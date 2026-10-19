@@ -3,7 +3,8 @@
     python smoke_test.py --check          # show the plan; no API calls
     python smoke_test.py                  # asks for confirmation, then runs n2, t3, m1
 
-Each question can make up to 8 LLM calls (recursion_limit 15) plus one embedding call per search_guide.
+Each question can make up to 8 LLM calls (5 tool calls via ToolCallLimitMiddleware, recursion_limit 21
+as a backstop) plus one embedding call per search_guide.
 A quota error stops the run immediately so no further free-tier calls are spent.
 """
 

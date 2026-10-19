@@ -20,6 +20,7 @@ from agent import (
     AgentResult,
     MissingConfigError,
     QuotaExceededError,
+    ToolStep,
     TooManyStepsError,
     ask,
     build_agent,
@@ -34,15 +35,22 @@ EXIT_TOO_MANY_STEPS = 5
 QUIT_WORDS = frozenset({"exit", "quit", ":q"})
 
 
+def format_steps(steps: list[ToolStep]) -> list[str]:
+    """One "[n] tool: sql-or-query" line per step, followed by its indented output preview."""
+    lines: list[str] = []
+    for i, step in enumerate(steps, start=1):
+        arg = step.args.get("sql") or step.args.get("query") or step.args
+        lines.append(f"[{i}] {step.name}: {arg}")
+        lines.append("    " + step.output_preview.replace("\n", "\n    "))
+    return lines
+
+
 def format_result(result: AgentResult, verbose: bool) -> str:
     """The answer, followed by tool steps and timing when verbose."""
     lines = [result.answer]
     if verbose:
         lines.append("")
-        for i, step in enumerate(result.steps, start=1):
-            arg = step.args.get("sql") or step.args.get("query") or step.args
-            lines.append(f"[{i}] {step.name}: {arg}")
-            lines.append("    " + step.output_preview.replace("\n", "\n    "))
+        lines += format_steps(result.steps)
         pages = ", ".join(f"PDF p. {p}" for p in result.pages) or "none"
         lines.append(f"({len(result.steps)} tool calls, {result.seconds:.1f}s, cited: {pages})")
         if result.unverified_pages:
@@ -61,6 +69,8 @@ def answer_once(graph: Runnable[Any, Any], question: str, verbose: bool,
         return EXIT_QUOTA, None
     except TooManyStepsError as e:
         print(f"Stopped: {e}", file=sys.stderr)
+        if e.steps:
+            print("Tool calls made before stopping:", *format_steps(e.steps), sep="\n", file=sys.stderr)
         return EXIT_TOO_MANY_STEPS, None
     except (AgentError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
