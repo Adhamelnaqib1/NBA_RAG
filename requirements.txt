@@ -17,3 +17,5 @@ pandas
 pyyaml
 tabulate
 streamlit
+# Local embedding backend (EMBED_BACKEND=bge): BAAI/bge-base-en-v1.5; pulls in torch
+sentence-transformers

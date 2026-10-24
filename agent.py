@@ -51,7 +51,7 @@ SEARCH_TOOL, SQL_TOOL = "search_guide", "run_sql"
 OFFTOPIC_ANSWER = "The 2026-27 NBA Guide covers the NBA only."
 _OFFTOPIC_TERMS = (
     "NFL", "MLB", "NHL", "MLS", "WNBA", "Super Bowl", "World Series", "Stanley Cup", "FIFA", "World Cup",
-    "Premier League", "NCAA football",
+    "Premier League","NCAA","Baseball","Soccer","Football","Hockey","Tennis"
 )
 _OFFTOPIC_RE = re.compile(
     r"\b(?:" + "|".join(r"\s+".join(map(re.escape, t.split())) for t in _OFFTOPIC_TERMS) + r")\b", re.IGNORECASE

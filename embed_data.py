@@ -1,8 +1,8 @@
 """Ingestion script for NBA Guide PDF.
 
-Extracts text from a PDF, splits into structure-preserving chunks,
-generates embeddings using Google Gemini (gemini-embedding-001),
-and stores them in a local ChromaDB vector store under ./data.
+Extracts text from a PDF, splits into structure-preserving chunks, generates embeddings with the selected
+backend (Gemini gemini-embedding-001 on the paid key, or BAAI/bge-base-en-v1.5 run locally), and stores them in
+a local ChromaDB vector store (./data for Gemini, ./data_bge for bge; see config.get_embed_spec).
 """
 
 from __future__ import annotations
@@ -13,8 +13,9 @@ import logging
 import random
 import re
 import time
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import chromadb
 import numpy as np
@@ -28,7 +29,22 @@ from pypdf import PdfReader
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from config import DEFAULT_COLLECTION, EMBED_DIM, EMBED_MODEL, get_embed_api_key
+from config import (
+    BGE_MODEL,
+    EMBED_BACKENDS,
+    EMBED_DEVICES,
+    EMBED_DIM,
+    EMBED_MODEL,
+    LOCAL_EMBED_MODELS,
+    EmbedSpec,
+    get_embed_api_key,
+    get_embed_backend,
+    get_embed_device,
+    get_embed_spec,
+)
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 # Load environment variables (.env)
 load_dotenv()
@@ -38,35 +54,106 @@ logger = logging.getLogger(__name__)
 # Constants
 RETRYABLE_STATUS_CODES: set[int] = {429, 500, 503, 504}
 SENTENCE_END_RE: re.Pattern[str] = re.compile(r"(?<=[a-z]{2}|\d{2})\.(?=\s+[A-Z])")
+# Prefixed to queries (not documents), as the bge v1.5 model card recommends for short retrieval queries.
+QUERY_INSTRUCTIONS: dict[str, str] = {BGE_MODEL: "Represent this sentence for searching relevant passages: "}
+LOCAL_BATCH_SIZE: int = 32
+
+
+def resolve_device(device: str | None = None) -> str:
+    """The torch device for local models: `device` (default EMBED_DEVICE); "auto" picks mps, then cuda, then cpu.
+
+    Raises:
+        ValueError: If the device is unknown or not available on this machine.
+    """
+    import torch
+
+    device = (device or get_embed_device()).lower()
+    if device not in EMBED_DEVICES:
+        raise ValueError(f"Embedding device must be one of {', '.join(EMBED_DEVICES)}; got {device!r}.")
+    if device == "auto":
+        if torch.backends.mps.is_available():
+            return "mps"
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "mps" and not torch.backends.mps.is_available():
+        raise ValueError("Embedding device 'mps' is not available on this machine.")
+    if device == "cuda" and not torch.cuda.is_available():
+        raise ValueError("Embedding device 'cuda' is not available on this machine.")
+    return device
+
+
+@lru_cache(maxsize=2)
+def load_local_model(model: str, device: str) -> SentenceTransformer:
+    """Loads (once per model and device) a sentence-transformers model; downloads it from Hugging Face if needed."""
+    from sentence_transformers import SentenceTransformer
+
+    logger.info("Loading local embedding model %s on %s...", model, device)
+    return SentenceTransformer(model, device=device)
+
+
+def _embed_local(texts: list[str], task_type: str, model: str, dim: int, device: str | None) -> list[list[float]]:
+    """Embeds with a local model: query instruction for RETRIEVAL_QUERY, unit-normalized vectors (cosine).
+
+    Raises:
+        ValueError: If the model returns the wrong number or size of vectors.
+    """
+    encoder = load_local_model(model, resolve_device(device))
+    prefix = QUERY_INSTRUCTIONS.get(model, "") if task_type == "RETRIEVAL_QUERY" else ""
+    vectors = np.asarray(
+        encoder.encode([prefix + t for t in texts], batch_size=LOCAL_BATCH_SIZE, normalize_embeddings=True,
+                       convert_to_numpy=True, show_progress_bar=False),
+        dtype=np.float32,
+    )
+    if vectors.shape != (len(texts), dim):
+        raise ValueError(f"{model} returned vectors of shape {vectors.shape}, expected ({len(texts)}, {dim})")
+    return [[float(x) for x in row] for row in vectors]
+
+
+def count_truncated(texts: list[str], model: str, device: str | None = None) -> int:
+    """How many texts exceed the local model's max sequence length (their tail is cut off before embedding)."""
+    encoder = load_local_model(model, resolve_device(device))
+    limit = encoder.max_seq_length
+    if limit is None:
+        return 0
+    lengths = [len(ids) for ids in encoder.tokenizer(texts, add_special_tokens=True)["input_ids"]]
+    return sum(n > limit for n in lengths)
 
 
 def embed_texts(
-    client: genai.Client,
+    client: genai.Client | None,
     texts: list[str],
     task_type: str,
     model: str = EMBED_MODEL,
     dim: int = EMBED_DIM,
     max_retries: int = 6,
+    device: str | None = None,
 ) -> list[list[float]]:
-    """Generates embeddings using Google Gemini with resilient retry backoff.
+    """Embeds texts with the backend `model` names: a local model (LOCAL_EMBED_MODELS) or Gemini with retry backoff.
+
+    The single entry point for ingestion and queries, so both always embed the same way.
 
     Args:
-        client: Google GenAI client instance.
+        client: Google GenAI client instance (Gemini only; ignored for local models).
         texts: List of document or query texts to embed.
         task_type: Embedding task type (e.g. 'RETRIEVAL_DOCUMENT' or 'RETRIEVAL_QUERY').
         model: Model identifier.
         dim: Output vector dimensionality.
-        max_retries: Maximum number of retry attempts for retryable errors.
+        max_retries: Maximum number of retry attempts for retryable errors (Gemini only).
+        device: Torch device for local models (default EMBED_DEVICE).
 
     Returns:
         List of embedding vectors, one for each input text.
 
     Raises:
         APIError: If non-retryable error occurs or retries are exhausted.
-        ValueError: If Gemini returns missing, too few, or wrongly sized embeddings.
+        ValueError: If the model returns missing, too few, or wrongly sized embeddings, a Gemini model is asked
+            for without a client, or the local device is unavailable.
     """
     if not texts:
         return []
+    if model in LOCAL_EMBED_MODELS:
+        return _embed_local(texts, task_type, model, dim, device)
+    if client is None:
+        raise ValueError(f"A Gemini client is required to embed with {model}.")
 
     config = types.EmbedContentConfig(
         task_type=task_type,
@@ -348,30 +435,36 @@ def extract_and_chunk_pdf(
 
 def store_in_chromadb(
     documents: list[dict[str, Any]],
-    data_dir: str | Path = "./data",
-    collection_name: str = DEFAULT_COLLECTION,
+    data_dir: str | Path | None = None,
+    collection_name: str | None = None,
     batch_size: int = 50,
     reset: bool = False,
     delay: float = 1.0,
     skip_stale_cleanup: bool = False,
     client: genai.Client | None = None,
+    spec: EmbedSpec | None = None,
+    device: str | None = None,
 ) -> chromadb.Collection:
     """Stores documents and embeddings in ChromaDB with safe re-ingestion.
 
     Args:
         documents: List of chunk dictionaries to ingest.
-        data_dir: Directory where ChromaDB files are stored.
-        collection_name: Name of the Chroma collection.
+        data_dir: Directory where ChromaDB files are stored (default: the spec's).
+        collection_name: Name of the Chroma collection (default: the spec's).
         batch_size: Number of chunks per embedding batch and upsert.
         reset: If True, deletes existing collection (without removing files on disk).
         delay: Seconds to sleep between batches to avoid rate limits.
         skip_stale_cleanup: If True, skips deleting chunks not in documents (used when --max-pages is set).
-        client: Optional pre-configured Google GenAI client.
+        client: Optional pre-configured Google GenAI client (Gemini only).
+        spec: Embedding backend (default: Gemini).
+        device: Torch device for a local model (default EMBED_DEVICE).
 
     Returns:
         The target Chroma collection instance.
     """
-    data_path = Path(data_dir).resolve()
+    spec = spec or get_embed_spec("gemini")
+    collection_name = collection_name or spec.collection
+    data_path = Path(data_dir if data_dir is not None else spec.data_dir).resolve()
     data_path.mkdir(parents=True, exist_ok=True)
 
     chroma_client = chromadb.PersistentClient(path=str(data_path))
@@ -386,7 +479,7 @@ def store_in_chromadb(
     collection = chroma_client.get_or_create_collection(
         name=collection_name,
         configuration={"hnsw": {"space": "cosine"}},
-        metadata={"model": EMBED_MODEL, "dimension": EMBED_DIM, "hnsw:space": "cosine"},
+        metadata={"model": spec.model, "dimension": spec.dim, "hnsw:space": "cosine"},
     )
 
     if not documents:
@@ -426,14 +519,22 @@ def store_in_chromadb(
         logger.info("All chunks for '%s' are already embedded and up to date.", pdf_name)
         return collection
 
-    if client is None:
+    if spec.local:
+        truncated = count_truncated([doc["text"] for doc in documents_to_embed], spec.model, device)
+        if truncated:
+            logger.warning(
+                "%d of %d chunks exceed %s's max sequence length; their tail is not embedded.",
+                truncated, total_to_embed, spec.model,
+            )
+    elif client is None:
         api_key = get_embed_api_key(required=True)
         client = genai.Client(api_key=api_key)
 
     logger.info(
-        "Generating Gemini embeddings (%s, d=%d) and adding %d chunks in batches of %d...",
-        EMBED_MODEL,
-        EMBED_DIM,
+        "Generating %s embeddings (%s, d=%d) and adding %d chunks in batches of %d...",
+        spec.backend,
+        spec.model,
+        spec.dim,
         total_to_embed,
         batch_size,
     )
@@ -449,8 +550,9 @@ def store_in_chromadb(
                 client=client,
                 texts=b_texts,
                 task_type="RETRIEVAL_DOCUMENT",
-                model=EMBED_MODEL,
-                dim=EMBED_DIM,
+                model=spec.model,
+                dim=spec.dim,
+                device=device,
             )
 
             collection.upsert(
@@ -469,24 +571,30 @@ def store_in_chromadb(
 
 
 def verify_database(
-    client: genai.Client,
+    client: genai.Client | None,
     collection: chromadb.Collection,
     sample_query: str = "Who holds the record for most points in a game?",
+    spec: EmbedSpec | None = None,
+    device: str | None = None,
 ) -> None:
     """Demonstrates vector retrieval by embedding a query and searching collection.
 
     Args:
-        client: Google GenAI client.
+        client: Google GenAI client (Gemini only).
         collection: Chroma collection instance.
         sample_query: Query string to test.
+        spec: Embedding backend the collection was built with (default: Gemini).
+        device: Torch device for a local model.
     """
+    spec = spec or get_embed_spec("gemini")
     logger.info("Running verification query: %r", sample_query)
     q_embeddings = embed_texts(
         client=client,
         texts=[sample_query],
         task_type="RETRIEVAL_QUERY",
-        model=EMBED_MODEL,
-        dim=EMBED_DIM,
+        model=spec.model,
+        dim=spec.dim,
+        device=device,
     )
 
     results = collection.query(
@@ -506,7 +614,7 @@ def verify_database(
 
 def main() -> None:
     """CLI entrypoint for embed_data."""
-    parser = argparse.ArgumentParser(description="Embed NBA Guide PDF into ChromaDB using Gemini embeddings.")
+    parser = argparse.ArgumentParser(description="Embed NBA Guide PDF into ChromaDB (Gemini or local bge).")
     parser.add_argument(
         "--pdf",
         type=str,
@@ -514,16 +622,28 @@ def main() -> None:
         help="Path to the PDF file (default: 2026-27-NBA-Guide.pdf)",
     )
     parser.add_argument(
+        "--backend",
+        choices=EMBED_BACKENDS,
+        default=None,
+        help="Embedding backend (default: EMBED_BACKEND or gemini); bge runs locally and needs no key",
+    )
+    parser.add_argument(
+        "--device",
+        choices=EMBED_DEVICES,
+        default=None,
+        help="Torch device for a local model (default: EMBED_DEVICE or auto)",
+    )
+    parser.add_argument(
         "--data-dir",
         type=str,
-        default="./data",
-        help="Directory to persist ChromaDB (default: ./data)",
+        default=None,
+        help="Directory to persist ChromaDB (default: ./data for gemini, ./data_bge for bge)",
     )
     parser.add_argument(
         "--collection",
         type=str,
-        default=DEFAULT_COLLECTION,
-        help=f"Name of the ChromaDB collection (default: {DEFAULT_COLLECTION})",
+        default=None,
+        help="Name of the ChromaDB collection (default: the backend's)",
     )
     parser.add_argument(
         "--batch-size",
@@ -552,8 +672,8 @@ def main() -> None:
     parser.add_argument(
         "--delay",
         type=float,
-        default=1.0,
-        help="Seconds to pause between batches to avoid rate limits (default: 1.0)",
+        default=None,
+        help="Seconds to pause between batches to avoid rate limits (default: 1.0 for gemini, 0 for local)",
     )
     parser.add_argument(
         "--reset",
@@ -570,6 +690,13 @@ def main() -> None:
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(level=log_level, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
+    spec = get_embed_spec(args.backend or get_embed_backend())
+    data_dir = Path(args.data_dir) if args.data_dir is not None else spec.data_dir
+    gemini_dir = get_embed_spec("gemini").data_dir
+    if spec.local and data_dir.resolve() == gemini_dir.resolve():
+        parser.error(f"--backend {spec.backend} must not write into the Gemini store {gemini_dir}; use its own directory")
+    delay = args.delay if args.delay is not None else (0.0 if spec.local else 1.0)
+
     with logging_redirect_tqdm():
         docs = extract_and_chunk_pdf(
             pdf_path=args.pdf,
@@ -578,23 +705,25 @@ def main() -> None:
             max_pages=args.max_pages,
         )
 
-        api_key = get_embed_api_key(required=False)
+        api_key = "" if spec.local else get_embed_api_key(required=False)
 
         client = genai.Client(api_key=api_key) if api_key else None
 
         collection = store_in_chromadb(
             documents=docs,
-            data_dir=args.data_dir,
+            data_dir=data_dir,
             collection_name=args.collection,
             batch_size=args.batch_size,
             reset=args.reset,
-            delay=args.delay,
+            delay=delay,
             skip_stale_cleanup=(args.max_pages is not None),
             client=client,
+            spec=spec,
+            device=args.device,
         )
 
-        if collection and collection.count() > 0 and client:
-            verify_database(client, collection)
+        if collection and collection.count() > 0 and (client or spec.local):
+            verify_database(client, collection, spec=spec, device=args.device)
 
 
 if __name__ == "__main__":

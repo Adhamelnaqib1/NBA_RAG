@@ -1,0 +1,3347 @@
+{
+  "label": "bge_fallback",
+  "created": "2026-10-24T04:59:28+00:00",
+  "git_commit": "46bd3ef",
+  "gold_sha256": "d6a5e5ed6e426e04f5371ce898a3d11d380f9bbfe4f244be5300e97a44a32af8",
+  "config": {
+    "mode": "fallback",
+    "ks": [
+      4,
+      8,
+      10
+    ],
+    "types": [
+      "narrative",
+      "mixed"
+    ],
+    "include_unverified": false,
+    "backend": "bge",
+    "collection": "nba_guide__bge-base-en-v1.5__d768",
+    "embed_model": "BAAI/bge-base-en-v1.5",
+    "embed_dim": 768,
+    "reranker": null
+  },
+  "live_embeddings": 0,
+  "results": {
+    "4": {
+      "summary": {
+        "all": {
+          "hit": {
+            "mean": 0.7254901960784313,
+            "low": 0.6078431372549019,
+            "high": 0.8431372549019608,
+            "n": 51
+          },
+          "recall": {
+            "mean": 0.7156862745098039,
+            "low": 0.5882352941176471,
+            "high": 0.8333333333333334,
+            "n": 51
+          },
+          "mrr": {
+            "mean": 0.5441176470588235,
+            "low": 0.4199346405228758,
+            "high": 0.6584967320261438,
+            "n": 51
+          },
+          "ndcg": {
+            "mean": 0.5821716742826349,
+            "low": 0.4647923327877641,
+            "high": 0.692430745327531,
+            "n": 51
+          }
+        },
+        "narrative": {
+          "hit": {
+            "mean": 0.7254901960784313,
+            "low": 0.6078431372549019,
+            "high": 0.8431372549019608,
+            "n": 51
+          },
+          "recall": {
+            "mean": 0.7156862745098039,
+            "low": 0.5882352941176471,
+            "high": 0.8333333333333334,
+            "n": 51
+          },
+          "mrr": {
+            "mean": 0.5441176470588235,
+            "low": 0.4199346405228758,
+            "high": 0.6584967320261438,
+            "n": 51
+          },
+          "ndcg": {
+            "mean": 0.5821716742826349,
+            "low": 0.4647923327877641,
+            "high": 0.692430745327531,
+            "n": 51
+          }
+        }
+      },
+      "items": [
+        {
+          "id": "n1",
+          "type": "narrative",
+          "relevant": [
+            199
+          ],
+          "pages": [
+            199,
+            198
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n2",
+          "type": "narrative",
+          "relevant": [
+            6,
+            180
+          ],
+          "pages": [
+            6,
+            289,
+            270,
+            308
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 0.5,
+          "mrr": 1.0,
+          "ndcg": 0.6131471927654584
+        },
+        {
+          "id": "n5",
+          "type": "narrative",
+          "relevant": [
+            189
+          ],
+          "pages": [
+            56,
+            189,
+            98,
+            100
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n6",
+          "type": "narrative",
+          "relevant": [
+            194
+          ],
+          "pages": [
+            194,
+            196,
+            195,
+            119
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n7",
+          "type": "narrative",
+          "relevant": [
+            194
+          ],
+          "pages": [
+            194,
+            196,
+            195,
+            92
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n8",
+          "type": "narrative",
+          "relevant": [
+            198
+          ],
+          "pages": [
+            198,
+            199
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n9",
+          "type": "narrative",
+          "relevant": [
+            198
+          ],
+          "pages": [
+            199,
+            198,
+            243
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n10",
+          "type": "narrative",
+          "relevant": [
+            198
+          ],
+          "pages": [
+            198,
+            199
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n11",
+          "type": "narrative",
+          "relevant": [
+            149
+          ],
+          "pages": [
+            217,
+            27,
+            152,
+            149
+          ],
+          "rank": 4,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.25,
+          "ndcg": 0.43067655807339306
+        },
+        {
+          "id": "n12",
+          "type": "narrative",
+          "relevant": [
+            27
+          ],
+          "pages": [
+            27,
+            217,
+            149,
+            284
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n13",
+          "type": "narrative",
+          "relevant": [
+            37
+          ],
+          "pages": [
+            527,
+            307,
+            919,
+            477
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n14",
+          "type": "narrative",
+          "relevant": [
+            47
+          ],
+          "pages": [
+            46,
+            51,
+            49,
+            50
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n15",
+          "type": "narrative",
+          "relevant": [
+            253
+          ],
+          "pages": [
+            253,
+            234,
+            265,
+            256
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n16",
+          "type": "narrative",
+          "relevant": [
+            253
+          ],
+          "pages": [
+            253,
+            243,
+            200
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n17",
+          "type": "narrative",
+          "relevant": [
+            235
+          ],
+          "pages": [
+            244,
+            238,
+            235,
+            257
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n18",
+          "type": "narrative",
+          "relevant": [
+            253
+          ],
+          "pages": [
+            253,
+            249,
+            256
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n19",
+          "type": "narrative",
+          "relevant": [
+            270
+          ],
+          "pages": [
+            270,
+            289,
+            308,
+            6
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n20",
+          "type": "narrative",
+          "relevant": [
+            218
+          ],
+          "pages": [
+            150,
+            218,
+            217
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n21",
+          "type": "narrative",
+          "relevant": [
+            54
+          ],
+          "pages": [
+            957,
+            61,
+            54,
+            66
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n22",
+          "type": "narrative",
+          "relevant": [
+            54
+          ],
+          "pages": [
+            87,
+            685,
+            54,
+            56
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n26",
+          "type": "narrative",
+          "relevant": [
+            36
+          ],
+          "pages": [
+            356,
+            322,
+            287,
+            36
+          ],
+          "rank": 4,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.25,
+          "ndcg": 0.43067655807339306
+        },
+        {
+          "id": "n27",
+          "type": "narrative",
+          "relevant": [
+            36
+          ],
+          "pages": [
+            164,
+            227,
+            287,
+            322
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n28",
+          "type": "narrative",
+          "relevant": [
+            165
+          ],
+          "pages": [
+            227,
+            228,
+            244,
+            235
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n29",
+          "type": "narrative",
+          "relevant": [
+            31
+          ],
+          "pages": [
+            32,
+            33,
+            31,
+            23
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n32",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            549,
+            562,
+            475,
+            513
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n33",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            607,
+            585,
+            638,
+            334
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n34",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            196,
+            189,
+            192,
+            190
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n35",
+          "type": "narrative",
+          "relevant": [
+            121
+          ],
+          "pages": [
+            121,
+            117,
+            112,
+            204
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n36",
+          "type": "narrative",
+          "relevant": [
+            157
+          ],
+          "pages": [
+            225,
+            157,
+            159,
+            198
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n37",
+          "type": "narrative",
+          "relevant": [
+            172
+          ],
+          "pages": [
+            200,
+            243,
+            172,
+            249
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n38",
+          "type": "narrative",
+          "relevant": [
+            228
+          ],
+          "pages": [
+            766,
+            717,
+            696,
+            746
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n39",
+          "type": "narrative",
+          "relevant": [
+            151
+          ],
+          "pages": [
+            449,
+            593,
+            629,
+            618
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n40",
+          "type": "narrative",
+          "relevant": [
+            151
+          ],
+          "pages": [
+            217,
+            149,
+            27,
+            151
+          ],
+          "rank": 4,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.25,
+          "ndcg": 0.43067655807339306
+        },
+        {
+          "id": "n41",
+          "type": "narrative",
+          "relevant": [
+            201
+          ],
+          "pages": [
+            201,
+            261,
+            200,
+            202
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n42",
+          "type": "narrative",
+          "relevant": [
+            201
+          ],
+          "pages": [
+            201,
+            244
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n43",
+          "type": "narrative",
+          "relevant": [
+            201
+          ],
+          "pages": [
+            201,
+            244,
+            227
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n44",
+          "type": "narrative",
+          "relevant": [
+            211
+          ],
+          "pages": [
+            200,
+            201,
+            249,
+            243
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n45",
+          "type": "narrative",
+          "relevant": [
+            211
+          ],
+          "pages": [
+            211,
+            249,
+            266
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n46",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            256,
+            253,
+            210,
+            234
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n47",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            256,
+            248,
+            265,
+            210
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n48",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            256,
+            265,
+            253,
+            261
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n49",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            249,
+            230,
+            257,
+            217
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n50",
+          "type": "narrative",
+          "relevant": [
+            240
+          ],
+          "pages": [
+            240,
+            214,
+            241,
+            258
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n51",
+          "type": "narrative",
+          "relevant": [
+            240
+          ],
+          "pages": [
+            241,
+            240,
+            236
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n54",
+          "type": "narrative",
+          "relevant": [
+            290
+          ],
+          "pages": [
+            272,
+            208,
+            8,
+            289
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n55",
+          "type": "narrative",
+          "relevant": [
+            7
+          ],
+          "pages": [
+            8,
+            21,
+            208,
+            20
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n56",
+          "type": "narrative",
+          "relevant": [
+            301
+          ],
+          "pages": [
+            301,
+            282,
+            500,
+            488
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n57",
+          "type": "narrative",
+          "relevant": [
+            301
+          ],
+          "pages": [
+            835,
+            301,
+            282,
+            438
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n58",
+          "type": "narrative",
+          "relevant": [
+            218
+          ],
+          "pages": [
+            217,
+            222,
+            218,
+            150
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n59",
+          "type": "narrative",
+          "relevant": [
+            218
+          ],
+          "pages": [
+            218,
+            219,
+            217,
+            222
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n60",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            706,
+            662,
+            608,
+            586
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        }
+      ]
+    },
+    "8": {
+      "summary": {
+        "all": {
+          "hit": {
+            "mean": 0.8235294117647058,
+            "low": 0.7254901960784313,
+            "high": 0.9215686274509803,
+            "n": 51
+          },
+          "recall": {
+            "mean": 0.8137254901960784,
+            "low": 0.7058823529411765,
+            "high": 0.9117647058823529,
+            "n": 51
+          },
+          "mrr": {
+            "mean": 0.5617647058823529,
+            "low": 0.44248366013071894,
+            "high": 0.6712418300653595,
+            "n": 51
+          },
+          "ndcg": {
+            "mean": 0.6182957365530889,
+            "low": 0.5103012830181525,
+            "high": 0.7147446050815646,
+            "n": 51
+          }
+        },
+        "narrative": {
+          "hit": {
+            "mean": 0.8235294117647058,
+            "low": 0.7254901960784313,
+            "high": 0.9215686274509803,
+            "n": 51
+          },
+          "recall": {
+            "mean": 0.8137254901960784,
+            "low": 0.7058823529411765,
+            "high": 0.9117647058823529,
+            "n": 51
+          },
+          "mrr": {
+            "mean": 0.5617647058823529,
+            "low": 0.44248366013071894,
+            "high": 0.6712418300653595,
+            "n": 51
+          },
+          "ndcg": {
+            "mean": 0.6182957365530889,
+            "low": 0.5103012830181525,
+            "high": 0.7147446050815646,
+            "n": 51
+          }
+        }
+      },
+      "items": [
+        {
+          "id": "n1",
+          "type": "narrative",
+          "relevant": [
+            199
+          ],
+          "pages": [
+            199,
+            198,
+            141,
+            243
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n2",
+          "type": "narrative",
+          "relevant": [
+            6,
+            180
+          ],
+          "pages": [
+            6,
+            289,
+            270,
+            308,
+            324,
+            188,
+            358,
+            743
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 0.5,
+          "mrr": 1.0,
+          "ndcg": 0.6131471927654584
+        },
+        {
+          "id": "n5",
+          "type": "narrative",
+          "relevant": [
+            189
+          ],
+          "pages": [
+            56,
+            189,
+            98,
+            100,
+            54,
+            179,
+            155
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n6",
+          "type": "narrative",
+          "relevant": [
+            194
+          ],
+          "pages": [
+            194,
+            196,
+            195,
+            119,
+            108,
+            882,
+            106
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n7",
+          "type": "narrative",
+          "relevant": [
+            194
+          ],
+          "pages": [
+            194,
+            196,
+            195,
+            92,
+            85,
+            64,
+            58,
+            71
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n8",
+          "type": "narrative",
+          "relevant": [
+            198
+          ],
+          "pages": [
+            198,
+            199
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n9",
+          "type": "narrative",
+          "relevant": [
+            198
+          ],
+          "pages": [
+            199,
+            198,
+            243,
+            264,
+            265,
+            207
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n10",
+          "type": "narrative",
+          "relevant": [
+            198
+          ],
+          "pages": [
+            198,
+            199,
+            206,
+            205
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n11",
+          "type": "narrative",
+          "relevant": [
+            149
+          ],
+          "pages": [
+            217,
+            27,
+            152,
+            149,
+            151,
+            284,
+            197,
+            219
+          ],
+          "rank": 4,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.25,
+          "ndcg": 0.43067655807339306
+        },
+        {
+          "id": "n12",
+          "type": "narrative",
+          "relevant": [
+            27
+          ],
+          "pages": [
+            27,
+            217,
+            149,
+            284,
+            28,
+            152,
+            29,
+            285
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n13",
+          "type": "narrative",
+          "relevant": [
+            37
+          ],
+          "pages": [
+            527,
+            307,
+            919,
+            477,
+            820,
+            782,
+            357,
+            924
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n14",
+          "type": "narrative",
+          "relevant": [
+            47
+          ],
+          "pages": [
+            46,
+            51,
+            49,
+            50,
+            48,
+            47,
+            181,
+            182
+          ],
+          "rank": 6,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.16666666666666666,
+          "ndcg": 0.3562071871080222
+        },
+        {
+          "id": "n15",
+          "type": "narrative",
+          "relevant": [
+            253
+          ],
+          "pages": [
+            253,
+            234,
+            265,
+            256,
+            261,
+            254,
+            237,
+            199
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n16",
+          "type": "narrative",
+          "relevant": [
+            253
+          ],
+          "pages": [
+            253,
+            243,
+            200,
+            261,
+            234,
+            235
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n17",
+          "type": "narrative",
+          "relevant": [
+            235
+          ],
+          "pages": [
+            244,
+            238,
+            235,
+            257,
+            239,
+            222,
+            212
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n18",
+          "type": "narrative",
+          "relevant": [
+            253
+          ],
+          "pages": [
+            253,
+            249,
+            256,
+            257,
+            234,
+            261,
+            200
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n19",
+          "type": "narrative",
+          "relevant": [
+            270
+          ],
+          "pages": [
+            270,
+            289,
+            308,
+            6,
+            358,
+            324,
+            753,
+            965
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n20",
+          "type": "narrative",
+          "relevant": [
+            218
+          ],
+          "pages": [
+            150,
+            218,
+            217,
+            222,
+            149,
+            27,
+            219
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n21",
+          "type": "narrative",
+          "relevant": [
+            54
+          ],
+          "pages": [
+            957,
+            61,
+            54,
+            66,
+            68,
+            79,
+            90,
+            88
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n22",
+          "type": "narrative",
+          "relevant": [
+            54
+          ],
+          "pages": [
+            87,
+            685,
+            54,
+            56,
+            63,
+            70,
+            82,
+            725
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n26",
+          "type": "narrative",
+          "relevant": [
+            36
+          ],
+          "pages": [
+            356,
+            322,
+            287,
+            36,
+            340,
+            306,
+            164,
+            227
+          ],
+          "rank": 4,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.25,
+          "ndcg": 0.43067655807339306
+        },
+        {
+          "id": "n27",
+          "type": "narrative",
+          "relevant": [
+            36
+          ],
+          "pages": [
+            164,
+            227,
+            287,
+            322,
+            36,
+            356,
+            599,
+            21
+          ],
+          "rank": 5,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.2,
+          "ndcg": 0.38685280723454163
+        },
+        {
+          "id": "n28",
+          "type": "narrative",
+          "relevant": [
+            165
+          ],
+          "pages": [
+            227,
+            228,
+            244,
+            235,
+            231,
+            201,
+            164,
+            212
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n29",
+          "type": "narrative",
+          "relevant": [
+            31
+          ],
+          "pages": [
+            32,
+            33,
+            31,
+            23,
+            22,
+            30,
+            24,
+            51
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n32",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            549,
+            562,
+            475,
+            513,
+            608,
+            501,
+            424,
+            525
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n33",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            607,
+            585,
+            638,
+            334,
+            362,
+            398,
+            596,
+            500
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n34",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            196,
+            189,
+            192,
+            190,
+            106,
+            191,
+            194,
+            759
+          ],
+          "rank": 6,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.16666666666666666,
+          "ndcg": 0.3562071871080222
+        },
+        {
+          "id": "n35",
+          "type": "narrative",
+          "relevant": [
+            121
+          ],
+          "pages": [
+            121,
+            117,
+            112,
+            204,
+            110,
+            111,
+            203,
+            236
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n36",
+          "type": "narrative",
+          "relevant": [
+            157
+          ],
+          "pages": [
+            225,
+            157,
+            159,
+            198,
+            35,
+            163,
+            199
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n37",
+          "type": "narrative",
+          "relevant": [
+            172
+          ],
+          "pages": [
+            200,
+            243,
+            172,
+            249,
+            225,
+            159
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n38",
+          "type": "narrative",
+          "relevant": [
+            228
+          ],
+          "pages": [
+            766,
+            717,
+            696,
+            746,
+            738,
+            652,
+            376,
+            719
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n39",
+          "type": "narrative",
+          "relevant": [
+            151
+          ],
+          "pages": [
+            449,
+            593,
+            629,
+            618,
+            315,
+            560,
+            368,
+            17
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n40",
+          "type": "narrative",
+          "relevant": [
+            151
+          ],
+          "pages": [
+            217,
+            149,
+            27,
+            151,
+            219,
+            152,
+            227,
+            284
+          ],
+          "rank": 4,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.25,
+          "ndcg": 0.43067655807339306
+        },
+        {
+          "id": "n41",
+          "type": "narrative",
+          "relevant": [
+            201
+          ],
+          "pages": [
+            201,
+            261,
+            200,
+            202,
+            243,
+            159,
+            211
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n42",
+          "type": "narrative",
+          "relevant": [
+            201
+          ],
+          "pages": [
+            201,
+            244,
+            234,
+            225
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n43",
+          "type": "narrative",
+          "relevant": [
+            201
+          ],
+          "pages": [
+            201,
+            244,
+            227,
+            228,
+            212
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n44",
+          "type": "narrative",
+          "relevant": [
+            211
+          ],
+          "pages": [
+            200,
+            201,
+            249,
+            243,
+            230,
+            211,
+            266
+          ],
+          "rank": 6,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.16666666666666666,
+          "ndcg": 0.3562071871080222
+        },
+        {
+          "id": "n45",
+          "type": "narrative",
+          "relevant": [
+            211
+          ],
+          "pages": [
+            211,
+            249,
+            266,
+            216,
+            230,
+            25
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n46",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            256,
+            253,
+            210,
+            234,
+            248,
+            264,
+            259,
+            265
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n47",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            256,
+            248,
+            265,
+            210,
+            260,
+            266,
+            253
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n48",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            256,
+            265,
+            253,
+            261,
+            234,
+            237,
+            259,
+            257
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n49",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            249,
+            230,
+            257,
+            217,
+            256,
+            243,
+            200
+          ],
+          "rank": 5,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.2,
+          "ndcg": 0.38685280723454163
+        },
+        {
+          "id": "n50",
+          "type": "narrative",
+          "relevant": [
+            240
+          ],
+          "pages": [
+            240,
+            214,
+            241,
+            258,
+            236
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n51",
+          "type": "narrative",
+          "relevant": [
+            240
+          ],
+          "pages": [
+            241,
+            240,
+            236,
+            250,
+            214,
+            203
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n54",
+          "type": "narrative",
+          "relevant": [
+            290
+          ],
+          "pages": [
+            272,
+            208,
+            8,
+            289,
+            374,
+            291,
+            21,
+            20
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n55",
+          "type": "narrative",
+          "relevant": [
+            7
+          ],
+          "pages": [
+            8,
+            21,
+            208,
+            20,
+            272,
+            42,
+            23,
+            26
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n56",
+          "type": "narrative",
+          "relevant": [
+            301
+          ],
+          "pages": [
+            301,
+            282,
+            500,
+            488,
+            294,
+            438,
+            451,
+            369
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n57",
+          "type": "narrative",
+          "relevant": [
+            301
+          ],
+          "pages": [
+            835,
+            301,
+            282,
+            438,
+            433,
+            337,
+            363,
+            630
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n58",
+          "type": "narrative",
+          "relevant": [
+            218
+          ],
+          "pages": [
+            217,
+            222,
+            218,
+            150,
+            219,
+            149,
+            27,
+            244
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n59",
+          "type": "narrative",
+          "relevant": [
+            218
+          ],
+          "pages": [
+            218,
+            219,
+            217,
+            222,
+            152,
+            27,
+            244,
+            235
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n60",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            706,
+            662,
+            608,
+            586,
+            574,
+            696,
+            636,
+            597
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        }
+      ]
+    },
+    "10": {
+      "summary": {
+        "all": {
+          "hit": {
+            "mean": 0.8235294117647058,
+            "low": 0.7254901960784313,
+            "high": 0.9215686274509803,
+            "n": 51
+          },
+          "recall": {
+            "mean": 0.8137254901960784,
+            "low": 0.7058823529411765,
+            "high": 0.9117647058823529,
+            "n": 51
+          },
+          "mrr": {
+            "mean": 0.5617647058823529,
+            "low": 0.44248366013071894,
+            "high": 0.6712418300653595,
+            "n": 51
+          },
+          "ndcg": {
+            "mean": 0.6182957365530889,
+            "low": 0.5103012830181525,
+            "high": 0.7147446050815646,
+            "n": 51
+          }
+        },
+        "narrative": {
+          "hit": {
+            "mean": 0.8235294117647058,
+            "low": 0.7254901960784313,
+            "high": 0.9215686274509803,
+            "n": 51
+          },
+          "recall": {
+            "mean": 0.8137254901960784,
+            "low": 0.7058823529411765,
+            "high": 0.9117647058823529,
+            "n": 51
+          },
+          "mrr": {
+            "mean": 0.5617647058823529,
+            "low": 0.44248366013071894,
+            "high": 0.6712418300653595,
+            "n": 51
+          },
+          "ndcg": {
+            "mean": 0.6182957365530889,
+            "low": 0.5103012830181525,
+            "high": 0.7147446050815646,
+            "n": 51
+          }
+        }
+      },
+      "items": [
+        {
+          "id": "n1",
+          "type": "narrative",
+          "relevant": [
+            199
+          ],
+          "pages": [
+            199,
+            198,
+            141,
+            243,
+            868
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n2",
+          "type": "narrative",
+          "relevant": [
+            6,
+            180
+          ],
+          "pages": [
+            6,
+            289,
+            270,
+            308,
+            324,
+            188,
+            358,
+            743,
+            753,
+            23
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 0.5,
+          "mrr": 1.0,
+          "ndcg": 0.6131471927654584
+        },
+        {
+          "id": "n5",
+          "type": "narrative",
+          "relevant": [
+            189
+          ],
+          "pages": [
+            56,
+            189,
+            98,
+            100,
+            54,
+            179,
+            155,
+            875,
+            81
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n6",
+          "type": "narrative",
+          "relevant": [
+            194
+          ],
+          "pages": [
+            194,
+            196,
+            195,
+            119,
+            108,
+            882,
+            106,
+            198,
+            205
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n7",
+          "type": "narrative",
+          "relevant": [
+            194
+          ],
+          "pages": [
+            194,
+            196,
+            195,
+            92,
+            85,
+            64,
+            58,
+            71,
+            225
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n8",
+          "type": "narrative",
+          "relevant": [
+            198
+          ],
+          "pages": [
+            198,
+            199,
+            140,
+            205
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n9",
+          "type": "narrative",
+          "relevant": [
+            198
+          ],
+          "pages": [
+            199,
+            198,
+            243,
+            264,
+            265,
+            207,
+            208,
+            246
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n10",
+          "type": "narrative",
+          "relevant": [
+            198
+          ],
+          "pages": [
+            198,
+            199,
+            206,
+            205,
+            203
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n11",
+          "type": "narrative",
+          "relevant": [
+            149
+          ],
+          "pages": [
+            217,
+            27,
+            152,
+            149,
+            151,
+            284,
+            197,
+            219,
+            286,
+            224
+          ],
+          "rank": 4,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.25,
+          "ndcg": 0.43067655807339306
+        },
+        {
+          "id": "n12",
+          "type": "narrative",
+          "relevant": [
+            27
+          ],
+          "pages": [
+            27,
+            217,
+            149,
+            284,
+            28,
+            152,
+            29,
+            285,
+            286,
+            219
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n13",
+          "type": "narrative",
+          "relevant": [
+            37
+          ],
+          "pages": [
+            527,
+            307,
+            919,
+            477,
+            820,
+            782,
+            357,
+            924,
+            810,
+            610
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n14",
+          "type": "narrative",
+          "relevant": [
+            47
+          ],
+          "pages": [
+            46,
+            51,
+            49,
+            50,
+            48,
+            47,
+            181,
+            182,
+            32,
+            305
+          ],
+          "rank": 6,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.16666666666666666,
+          "ndcg": 0.3562071871080222
+        },
+        {
+          "id": "n15",
+          "type": "narrative",
+          "relevant": [
+            253
+          ],
+          "pages": [
+            253,
+            234,
+            265,
+            256,
+            261,
+            254,
+            237,
+            199,
+            181
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n16",
+          "type": "narrative",
+          "relevant": [
+            253
+          ],
+          "pages": [
+            253,
+            243,
+            200,
+            261,
+            234,
+            235,
+            238,
+            159
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n17",
+          "type": "narrative",
+          "relevant": [
+            235
+          ],
+          "pages": [
+            244,
+            238,
+            235,
+            257,
+            239,
+            222,
+            212,
+            201
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n18",
+          "type": "narrative",
+          "relevant": [
+            253
+          ],
+          "pages": [
+            253,
+            249,
+            256,
+            257,
+            234,
+            261,
+            200,
+            201,
+            243
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n19",
+          "type": "narrative",
+          "relevant": [
+            270
+          ],
+          "pages": [
+            270,
+            289,
+            308,
+            6,
+            358,
+            324,
+            753,
+            965,
+            743,
+            503
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n20",
+          "type": "narrative",
+          "relevant": [
+            218
+          ],
+          "pages": [
+            150,
+            218,
+            217,
+            222,
+            149,
+            27,
+            219,
+            228
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n21",
+          "type": "narrative",
+          "relevant": [
+            54
+          ],
+          "pages": [
+            957,
+            61,
+            54,
+            66,
+            68,
+            79,
+            90,
+            88,
+            591,
+            56
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n22",
+          "type": "narrative",
+          "relevant": [
+            54
+          ],
+          "pages": [
+            87,
+            685,
+            54,
+            56,
+            63,
+            70,
+            82,
+            725,
+            746,
+            736
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n26",
+          "type": "narrative",
+          "relevant": [
+            36
+          ],
+          "pages": [
+            356,
+            322,
+            287,
+            36,
+            340,
+            306,
+            164,
+            227,
+            169,
+            170
+          ],
+          "rank": 4,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.25,
+          "ndcg": 0.43067655807339306
+        },
+        {
+          "id": "n27",
+          "type": "narrative",
+          "relevant": [
+            36
+          ],
+          "pages": [
+            164,
+            227,
+            287,
+            322,
+            36,
+            356,
+            599,
+            21,
+            169,
+            22
+          ],
+          "rank": 5,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.2,
+          "ndcg": 0.38685280723454163
+        },
+        {
+          "id": "n28",
+          "type": "narrative",
+          "relevant": [
+            165
+          ],
+          "pages": [
+            227,
+            228,
+            244,
+            235,
+            231,
+            201,
+            164,
+            212
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n29",
+          "type": "narrative",
+          "relevant": [
+            31
+          ],
+          "pages": [
+            32,
+            33,
+            31,
+            23,
+            22,
+            30,
+            24,
+            51,
+            46,
+            223
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n32",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            549,
+            562,
+            475,
+            513,
+            608,
+            501,
+            424,
+            525,
+            751,
+            488
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n33",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            607,
+            585,
+            638,
+            334,
+            362,
+            398,
+            596,
+            500,
+            451,
+            312
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n34",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            196,
+            189,
+            192,
+            190,
+            106,
+            191,
+            194,
+            759,
+            118,
+            155
+          ],
+          "rank": 6,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.16666666666666666,
+          "ndcg": 0.3562071871080222
+        },
+        {
+          "id": "n35",
+          "type": "narrative",
+          "relevant": [
+            121
+          ],
+          "pages": [
+            121,
+            117,
+            112,
+            204,
+            110,
+            111,
+            203,
+            236,
+            138,
+            162
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n36",
+          "type": "narrative",
+          "relevant": [
+            157
+          ],
+          "pages": [
+            225,
+            157,
+            159,
+            198,
+            35,
+            163,
+            199,
+            234
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n37",
+          "type": "narrative",
+          "relevant": [
+            172
+          ],
+          "pages": [
+            200,
+            243,
+            172,
+            249,
+            225,
+            159,
+            211,
+            217
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n38",
+          "type": "narrative",
+          "relevant": [
+            228
+          ],
+          "pages": [
+            766,
+            717,
+            696,
+            746,
+            738,
+            652,
+            376,
+            719,
+            461,
+            809
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n39",
+          "type": "narrative",
+          "relevant": [
+            151
+          ],
+          "pages": [
+            449,
+            593,
+            629,
+            618,
+            315,
+            560,
+            368,
+            17,
+            337
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n40",
+          "type": "narrative",
+          "relevant": [
+            151
+          ],
+          "pages": [
+            217,
+            149,
+            27,
+            151,
+            219,
+            152,
+            227,
+            284,
+            220,
+            197
+          ],
+          "rank": 4,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.25,
+          "ndcg": 0.43067655807339306
+        },
+        {
+          "id": "n41",
+          "type": "narrative",
+          "relevant": [
+            201
+          ],
+          "pages": [
+            201,
+            261,
+            200,
+            202,
+            243,
+            159,
+            211,
+            152
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n42",
+          "type": "narrative",
+          "relevant": [
+            201
+          ],
+          "pages": [
+            201,
+            244,
+            234,
+            225,
+            199,
+            238
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n43",
+          "type": "narrative",
+          "relevant": [
+            201
+          ],
+          "pages": [
+            201,
+            244,
+            227,
+            228,
+            212,
+            222
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n44",
+          "type": "narrative",
+          "relevant": [
+            211
+          ],
+          "pages": [
+            200,
+            201,
+            249,
+            243,
+            230,
+            211,
+            266
+          ],
+          "rank": 6,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.16666666666666666,
+          "ndcg": 0.3562071871080222
+        },
+        {
+          "id": "n45",
+          "type": "narrative",
+          "relevant": [
+            211
+          ],
+          "pages": [
+            211,
+            249,
+            266,
+            216,
+            230,
+            25,
+            930
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n46",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            256,
+            253,
+            210,
+            234,
+            248,
+            264,
+            259,
+            265,
+            187,
+            237
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n47",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            256,
+            248,
+            265,
+            210,
+            260,
+            266,
+            253,
+            247
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n48",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            256,
+            265,
+            253,
+            261,
+            234,
+            237,
+            259,
+            257,
+            264,
+            187
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n49",
+          "type": "narrative",
+          "relevant": [
+            256
+          ],
+          "pages": [
+            249,
+            230,
+            257,
+            217,
+            256,
+            243,
+            200,
+            253,
+            221
+          ],
+          "rank": 5,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.2,
+          "ndcg": 0.38685280723454163
+        },
+        {
+          "id": "n50",
+          "type": "narrative",
+          "relevant": [
+            240
+          ],
+          "pages": [
+            240,
+            214,
+            241,
+            258,
+            236,
+            250
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n51",
+          "type": "narrative",
+          "relevant": [
+            240
+          ],
+          "pages": [
+            241,
+            240,
+            236,
+            250,
+            214,
+            203,
+            258
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n54",
+          "type": "narrative",
+          "relevant": [
+            290
+          ],
+          "pages": [
+            272,
+            208,
+            8,
+            289,
+            374,
+            291,
+            21,
+            20,
+            754,
+            293
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n55",
+          "type": "narrative",
+          "relevant": [
+            7
+          ],
+          "pages": [
+            8,
+            21,
+            208,
+            20,
+            272,
+            42,
+            23,
+            26,
+            43,
+            39
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        },
+        {
+          "id": "n56",
+          "type": "narrative",
+          "relevant": [
+            301
+          ],
+          "pages": [
+            301,
+            282,
+            500,
+            488,
+            294,
+            438,
+            451,
+            369,
+            475,
+            354
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n57",
+          "type": "narrative",
+          "relevant": [
+            301
+          ],
+          "pages": [
+            835,
+            301,
+            282,
+            438,
+            433,
+            337,
+            363,
+            630,
+            512,
+            872
+          ],
+          "rank": 2,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.5,
+          "ndcg": 0.6309297535714575
+        },
+        {
+          "id": "n58",
+          "type": "narrative",
+          "relevant": [
+            218
+          ],
+          "pages": [
+            217,
+            222,
+            218,
+            150,
+            219,
+            149,
+            27,
+            244,
+            235,
+            152
+          ],
+          "rank": 3,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 0.3333333333333333,
+          "ndcg": 0.5
+        },
+        {
+          "id": "n59",
+          "type": "narrative",
+          "relevant": [
+            218
+          ],
+          "pages": [
+            218,
+            219,
+            217,
+            222,
+            152,
+            27,
+            244,
+            235,
+            231,
+            228
+          ],
+          "rank": 1,
+          "hit": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        {
+          "id": "n60",
+          "type": "narrative",
+          "relevant": [
+            191
+          ],
+          "pages": [
+            706,
+            662,
+            608,
+            586,
+            574,
+            696,
+            636,
+            597,
+            495,
+            587
+          ],
+          "rank": null,
+          "hit": 0.0,
+          "recall": 0.0,
+          "mrr": 0.0,
+          "ndcg": 0.0
+        }
+      ]
+    }
+  }
+}

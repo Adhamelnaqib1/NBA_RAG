@@ -1,0 +1,1012 @@
+# Gold set for the evaluation harness (see EVAL_DESIGN.md).
+#
+# expected_pages are Chroma `page` numbers: 1-based PDF page index (printed page number + 1). The same
+# numbering is used by SQLite's source_page.
+# gold_answer is a short, self-contained answer. `source` quotes the guide text it came from.
+# Only items with `verified: true` are scored. Drafted items start unverified; set the flag after
+# checking the answer against the PDF page.
+#
+# Batch 1: narrative items n1-n25. n1-n5 are the earlier hand-verified questions (pages unchanged,
+# gold_answer newly added from the PDF text).
+#
+# `type` decides how an item is scored; the id prefix is only historical. Award-list questions (n3, n4, n23,
+# n24, n25, n30, n31, n52, n53, m1, m2, m3, m4, m11) became numeric once the awards table was loaded: they are
+# answered with run_sql, so they are not scored on search_guide retrieval. Their gold_sql was checked to
+# return the verified gold_answer.
+
+questions:
+  # --- narrative: answered from the guide's text (search_guide) ---
+  - id: n1
+    type: narrative
+    question: "What is the record for most points by one player in a single regular-season game, and who set it?"
+    gold_answer: "100 points, by Wilt Chamberlain (Philadelphia vs. New York, March 2, 1962)."
+    expected_pages: [199]
+    source: "Records: Regular Season, 'Most points, game': 100—Wilt Chamberlain, Philadelphia vs. New York, at Hershey, Pa., March 2, 1962"
+    verified: true
+
+  - id: n2
+    type: narrative
+    question: "Which team won the 2025-26 NBA championship, and who was its head coach?"
+    gold_answer: "The New York Knicks, coached by Mike Brown."
+    expected_pages: [6, 180]
+    source: "2025-26 NBA CHAMPION NEW YORK KNICKS ... Head Coach Mike Brown; Finals line: New York (Mike Brown) vs. San Antonio (Mitch Johnson), 4-1"
+    verified: true
+
+  - id: n3
+    type: numeric
+    question: "Who was named NBA Finals MVP in 2026?"
+    gold_answer: "Jalen Brunson of the New York Knicks."
+    expected_pages: [102]
+    gold_sql: "SELECT player, team FROM awards WHERE award = 'NBA Finals Most Valuable Player' AND season_end_year = 2026 ORDER BY player"
+    source: "Award Winners, NBA Finals Most Valuable Player: 2026 — Jalen Brunson, New York"
+    verified: true
+
+  - id: n4
+    type: numeric
+    question: "Who won the NBA Most Valuable Player award for the 2025-26 season?"
+    gold_answer: "Shai Gilgeous-Alexander of Oklahoma City."
+    expected_pages: [100]
+    gold_sql: "SELECT player, team FROM awards WHERE award = 'NBA Most Valuable Player' AND season_label = '2025-26' ORDER BY player"
+    source: "Award Winners, MVP list: 2025-26 — Shai Gilgeous-Alexander, Oklahoma City (the extracted text puts this list before its heading)"
+    verified: true
+
+  - id: n5
+    type: narrative
+    question: "In what year was Red Auerbach enshrined in the Basketball Hall of Fame as a coach?"
+    gold_answer: "1969."
+    expected_pages: [189]
+    source: "Hall of Fame enshrinees, coaches: Red Auerbach . . . 1969"
+    verified: true
+
+  - id: n6
+    type: narrative
+    question: "Who was the ABA Most Valuable Player in 1972?"
+    gold_answer: "Artis Gilmore of Kentucky."
+    expected_pages: [194]
+    source: "American Basketball Association, MOST VALUABLE PLAYER: 1972— Artis Gilmore, Kentucky"
+    verified: true
+
+  - id: n7
+    type: narrative
+    question: "Which coach was named ABA Coach of the Year three times?"
+    gold_answer: "Larry Brown (1973 Carolina, 1975 and 1976 Denver)."
+    expected_pages: [194]
+    source: "ABA COACH OF THE YEAR list and caption: 'Larry Brown played in the ABA and was named ABA Coach of the Year three times.'"
+    verified: true
+
+  - id: n8
+    type: narrative
+    question: "Who has played the most seasons in NBA history, and how many?"
+    gold_answer: "LeBron James, 23 seasons (2003-04 through 2025-26)."
+    expected_pages: [198]
+    source: "Records: Regular Season, 'Most seasons': 23—LeBron James, 2003-04—2025-26"
+    verified: true
+
+  - id: n9
+    type: narrative
+    question: "Who holds the NBA record for most consecutive games played in a career, and what is the number?"
+    gold_answer: "A.C. Green, with 1,192 consecutive games (Nov. 19, 1986 to April 18, 2001)."
+    expected_pages: [198]
+    source: "Records: Regular Season, 'Most consecutive games, career': 1,192—A.C. Green"
+    verified: true
+
+  - id: n10
+    type: narrative
+    question: "Who appeared in the most games in a single NBA season, and in which season?"
+    gold_answer: "Walt Bellamy, 88 games in 1968-69 (New York and Detroit)."
+    expected_pages: [198]
+    source: "Records: Regular Season, 'Most games, season': 88—Walt Bellamy, New York, Detroit, 1968-69"
+    verified: true
+
+  - id: n11
+    type: narrative
+    question: "What is the most points scored by one player in a single Emirates NBA Cup game, and who scored them?"
+    gold_answer: "60 points, by De'Aaron Fox (Sacramento vs. Minnesota, Nov. 15, 2024, in overtime)."
+    expected_pages: [149]
+    source: "History: Emirates NBA Cup, SINGLE-GAME BESTS, POINTS: De'Aaron Fox, Sacramento vs. Minnesota, Nov. 15, 2024* ... 60"
+    verified: true
+
+  - id: n12
+    type: narrative
+    question: "Who led the 2025 Emirates NBA Cup in scoring average, and what was the average?"
+    gold_answer: "Cade Cunningham of Detroit, 38.3 points per game."
+    expected_pages: [27]
+    source: "2025-26 Review: Emirates NBA Cup, INDIVIDUAL LEADERS, POINTS: Cade Cunningham, Detroit ... 3 games, 115 PTS, 38.3 AVG"
+    verified: true
+
+  - id: n13
+    type: narrative
+    question: "In the 2026 playoffs, which team won the first-round series between the #2 seed Boston and the #7 seed Philadelphia, and what was the series result?"
+    gold_answer: "Philadelphia won the series 4-3."
+    expected_pages: [37]
+    source: "Playoffs RESULTS, First Round: #2 BOSTON vs. #7 PHILADELPHIA (76ers won 4-3)"
+    verified: true
+
+  - id: n14
+    type: narrative
+    question: "What was the final score of Game 2 of the 2026 NBA Finals, and who won?"
+    gold_answer: "New York beat San Antonio 105-104."
+    expected_pages: [47]
+    source: "Game 2 box score, Friday, June 5, 2026, Frost Bank Center: New York Knicks 105 (visitor), San Antonio Spurs 104; Knicks listed (2-0), Spurs (0-2)"
+    verified: true
+
+  - id: n15
+    type: narrative
+    question: "Who holds the record for most points in a seven-game NBA Finals series, and how many did they score?"
+    gold_answer: "Elgin Baylor, 284 points for the LA Lakers in 1962."
+    expected_pages: [253]
+    source: "Records: NBA Finals, MOST POINTS, 7-game series: 284—Elgin Baylor, LA Lakers, 1962"
+    verified: true
+
+  - id: n16
+    type: narrative
+    question: "Who made the most field goals in a four-game NBA Finals series, and how many?"
+    gold_answer: "Hakeem Olajuwon, 56 field goals for Houston in 1995."
+    expected_pages: [253]
+    source: "Records: NBA Finals, MOST FIELD GOALS MADE, 4-game series: 56—Hakeem Olajuwon, Houston, 1995"
+    verified: true
+
+  - id: n17
+    type: narrative
+    question: "What is the playoff record for three-point field goals made in a seven-game series?"
+    gold_answer: "34, by Stephen Curry for Golden State vs. Sacramento in 2023."
+    expected_pages: [235]
+    source: "Records: Playoffs, MOST THREE-POINT FIELD GOALS MADE, 7-game series: 34—Stephen Curry, Golden State vs. Sacramento, 2023"
+    verified: true
+
+  - id: n18
+    type: narrative
+    question: "Who holds the NBA Finals record for highest field goal percentage in a four-game series (minimum 4 field goals made per game)?"
+    gold_answer: "JaVale McGee of Golden State in 2018, at .800."
+    expected_pages: [253]
+    source: "Records: NBA Finals, HIGHEST FIELD GOAL PERCENTAGE (minimum: 4 FGM per game), 4-game series: .800—JaVale McGee, Golden State, 2018"
+    verified: true
+
+  - id: n19
+    type: narrative
+    question: "Which team won the 2024-25 NBA championship, and who was its head coach?"
+    gold_answer: "The Oklahoma City Thunder, coached by Mark Daigneault."
+    expected_pages: [270]
+    source: "2024-25 Review: Regular Season, '2024-25 NBA CHAMPION OKLAHOMA CITY THUNDER' ... Head Coach Mark Daigneault"
+    verified: true
+
+  - id: n20
+    type: narrative
+    question: "Who tied the Emirates NBA Cup record for most three-pointers in a game with 10 on Nov. 25, 2025, playing for Washington against Atlanta?"
+    gold_answer: "CJ McCollum, tying Tyler Herro's record of 10."
+    expected_pages: [218]
+    source: "Records: Emirates NBA Cup, 'Most three-point field goals made, game': 10—Tyler Herro, Miami at Detroit, Nov. 12, 2024 (OT); CJ McCollum, Washington vs. Atlanta, Nov. 25, 2025"
+    verified: true
+
+  - id: n21
+    type: narrative
+    question: "Who coached the Atlanta Hawks franchise in 1957-58, when it went 41-31 and finished first in the Western Division?"
+    gold_answer: "Alex Hannum."
+    expected_pages: [54]
+    source: "History: Team by Team, Atlanta Hawks year-by-year: 1957-58 Alex Hannum 1/Western 41 31 8 3"
+    verified: true
+
+  - id: n22
+    type: narrative
+    question: "What jersey number of Dominique Wilkins has the Atlanta Hawks retired?"
+    gold_answer: "Number 21."
+    expected_pages: [54]
+    source: "ATLANTA HAWKS RETIRED JERSEYS: 21 Dominique Wilkins"
+    verified: true
+
+  - id: n23
+    type: numeric
+    question: "Who was the 2025 NBA Eastern Conference Finals MVP?"
+    gold_answer: "Pascal Siakam of Indiana."
+    expected_pages: [102]
+    gold_sql: "SELECT player, team FROM awards WHERE award = 'NBA Eastern Conference Finals MVP' AND season_end_year = 2025 ORDER BY player"
+    source: "Award Winners, NBA EASTERN CONFERENCE FINALS MVP: 2025 — Pascal Siakam, Indiana"
+    verified: true
+
+  - id: n24
+    type: numeric
+    question: "Who won the Bob Lanier Community Assist Award for 2013-14?"
+    gold_answer: "Stephen Curry of Golden State."
+    expected_pages: [103]
+    gold_sql: "SELECT player, team FROM awards WHERE award = 'Bob Lanier Community Assist Award' AND season_label = '2013-14' ORDER BY player"
+    source: "Award Winners, BOB LANIER COMMUNITY ASSIST AWARD: 2013-14 — Stephen Curry, Golden State"
+    verified: true
+
+  - id: n25
+    type: numeric
+    question: "Who won the Kareem Abdul-Jabbar Social Justice Champion Award for 2025-26?"
+    gold_answer: "Bam Adebayo of Miami."
+    expected_pages: [103]
+    gold_sql: "SELECT player, team FROM awards WHERE award = 'Kareem Abdul-Jabbar Social Justice Champion Award' AND season_label = '2025-26' ORDER BY player"
+    source: "Award Winners, KAREEM ABDUL-JABBAR SOCIAL JUSTICE CHAMPION AWARD: 2025-26 — Bam Adebayo, Miami"
+    verified: true
+
+  # --- batch 2: narrative n26-n60 (drafted, unverified) ---
+  - id: n26
+    type: narrative
+    question: "Which West team clinched the No. 7 seed in the 2026 Play-In Tournament, and what was the score of that game?"
+    gold_answer: "The Portland Trail Blazers, who beat Phoenix 114-110 on April 14."
+    expected_pages: [36]
+    source: "Play-In Tournament RESULTS, #7 SEED GAME: #7 PHOENIX vs. #8 PORTLAND, April 14 – Portland 114 at Phoenix 110 (Trail Blazers clinched No. 7 seed)"
+    verified: true
+
+  - id: n27
+    type: narrative
+    question: "In the 2026 Play-In 9-10 game between Charlotte and Miami, who won and was it decided in overtime?"
+    gold_answer: "Charlotte won 127-126 in overtime on April 14, eliminating Miami."
+    expected_pages: [36]
+    source: "Play-In Tournament RESULTS, 9-10 GAME: #9 CHARLOTTE vs. #10 MIAMI, April 14 – Miami 126 at Charlotte 127 (OT) (Heat eliminated)"
+    verified: true
+
+  - id: n28
+    type: narrative
+    question: "Who holds the single-game record for three-pointers made in the NBA Play-In Tournament, and how many?"
+    gold_answer: "Devin Vassell of San Antonio, with 7 (on 13 attempts) at New Orleans on April 13, 2022."
+    expected_pages: [165]
+    source: "History: Play-In Tournament, 3PM 3PA list, first row: Devin Vassell, San Antonio at New Orleans, April 13, 2022 ... 7 13 (next best is 6)"
+    verified: true
+
+  - id: n29
+    type: narrative
+    question: "Where was the 2026 NBA All-Star Game played?"
+    gold_answer: "The Intuit Dome in Inglewood, California (Feb. 15, 2026)."
+    expected_pages: [31]
+    source: "2025-26 Review: NBA All-Star Game, FINAL BOX: Sunday, February 15, 2026 Intuit Dome, Inglewood, CA"
+    verified: true
+
+  - id: n30
+    type: numeric
+    question: "Who was the Most Valuable Player of the first NBA All-Star Game in 1951?"
+    gold_answer: "Ed Macauley of Boston (the East won 111-94)."
+    expected_pages: [102]
+    gold_sql: "SELECT player, team FROM awards WHERE award = 'NBA All-Star Game Most Valuable Player' AND season_end_year = 1951 ORDER BY player"
+    source: "History: All-Star Game RESULTS: 1951—East 111, West 94 (Boston) ... Ed Macauley, Boston"
+    verified: true
+
+  - id: n31
+    type: numeric
+    question: "Which two players shared the All-Star Game MVP award in 1959?"
+    gold_answer: "Elgin Baylor (Minneapolis) and Bob Pettit (St. Louis)."
+    expected_pages: [102]
+    gold_sql: "SELECT player, team FROM awards WHERE award = 'NBA All-Star Game Most Valuable Player' AND season_end_year = 1959 ORDER BY player"
+    source: "History: All-Star Game RESULTS: 1959—West 124, East 108 (Detroit) ... Elgin Baylor, Minneapolis; Bob Pettit, St. Louis"
+    verified: true
+
+  - id: n32
+    type: narrative
+    question: "In what year was Tim Duncan inducted into the Naismith Basketball Hall of Fame?"
+    gold_answer: "2020."
+    expected_pages: [191]
+    source: "History: Hall of Fame list: Tim Duncan . . . 2020"
+    verified: true
+
+  - id: n33
+    type: narrative
+    question: "Which class was Elena Delle Donne enshrined in at the Naismith Hall of Fame?"
+    gold_answer: "The class of 2026."
+    expected_pages: [191]
+    source: "History: Hall of Fame list: Elena Delle Donne . . . 2026"
+    verified: true
+
+  - id: n34
+    type: narrative
+    question: "In what year was Julius Erving enshrined in the Hall of Fame?"
+    gold_answer: "1993."
+    expected_pages: [191]
+    source: "History: Hall of Fame list: Julius Erving . . . 1993"
+    verified: true
+
+  - id: n35
+    type: narrative
+    question: "Which player has the most NBA All-Defensive Team selections, and how many were first-team?"
+    gold_answer: "Tim Duncan, with 15 selections (8 first team, 7 second team)."
+    expected_pages: [121]
+    source: "History: Award Winners, NBA ALL-DEFENSIVE TEAM SELECTIONS BY PLAYER: Tim Duncan 15 8 7"
+    verified: true
+
+  - id: n36
+    type: narrative
+    question: "Who has scored the most career points in All-Star Games, and how many?"
+    gold_answer: "LeBron James, 449 points in 23 games."
+    expected_pages: [157]
+    source: "History: All-Star Game STATISTICAL LEADERS, CAREER POINTS: LeBron James* 23 GP ... 449 PTS, 19.5 AVG"
+    verified: true
+
+  - id: n37
+    type: narrative
+    question: "Which players share the NBA playoff record for most field goals made in a single game, and how many did they make?"
+    gold_answer: "24, by Wilt Chamberlain (1960 vs. Syracuse), John Havlicek (1973 vs. Atlanta) and Michael Jordan (1988 vs. Cleveland)."
+    expected_pages: [172]
+    source: "History: Playoffs, FIELD GOALS MADE: Chamberlain 24, Havlicek 24, Jordan 24 (next is Barkley with 23)"
+    verified: true
+
+  - id: n38
+    type: narrative
+    question: "What is the Play-In Tournament record for three-point attempts in a game, and who attempted that many?"
+    gold_answer: "16, by De'Aaron Fox (Sacramento, April 19, 2024) and LaMelo Ball (Charlotte, April 14, 2026, in overtime)."
+    expected_pages: [228]
+    source: "Records: Play-In Tournament, THREE-POINT FIELD GOAL ATTEMPTS, 'Most three-point field goal attempts, game': 16—De'Aaron Fox ...; LaMelo Ball ..."
+    verified: true
+
+  - id: n39
+    type: narrative
+    question: "Which players have played the most career games in the Emirates NBA Cup, and how many games?"
+    gold_answer: "Josh Hart, Bobby Portis Jr. and Cason Wallace, with 17 games each."
+    expected_pages: [151]
+    source: "History: Emirates NBA Cup, MOST GAMES PLAYED: Josh Hart 17, Bobby Portis Jr. 17, Cason Wallace 17"
+    verified: true
+
+  - id: n40
+    type: narrative
+    question: "Who has played the most career minutes in the Emirates NBA Cup?"
+    gold_answer: "Mikal Bridges, with 580 minutes."
+    expected_pages: [151]
+    source: "History: Emirates NBA Cup, MOST MINUTES PLAYED: Mikal Bridges 580, Jalen Brunson 572"
+    verified: true
+
+  - id: n41
+    type: narrative
+    question: "Who holds the record for most field goal attempts in one quarter, and how many?"
+    gold_answer: "21, by Wilt Chamberlain (4th quarter, March 2, 1962, the 100-point game) and Nikola Jokic (3rd quarter, Dec. 7, 2024, at Washington)."
+    expected_pages: [201]
+    source: "Records: Regular Season, 'Most field goal attempts, one quarter': 21—Wilt Chamberlain ... (4th); Nikola Jokic, Denver at Washington, Dec. 7, 2024 (3rd)"
+    verified: true
+
+  - id: n42
+    type: narrative
+    question: "Who has led the NBA in three-point percentage the most seasons, and how many times?"
+    gold_answer: "Kyle Korver, four times."
+    expected_pages: [201]
+    source: "Records: Regular Season, THREE-POINT FIELD GOAL PERCENTAGE, 'Most seasons leading league': 4—Kyle Korver"
+    verified: true
+
+  - id: n43
+    type: narrative
+    question: "Which player led the league in three-point percentage three times, the latest in 2025-26?"
+    gold_answer: "Luke Kennard (2021-22, 2022-23 and 2025-26)."
+    expected_pages: [201]
+    source: "Records: Regular Season, 'Most seasons leading league' 3—Luke Kennard, LA Clippers, 2021-22; LA Clippers/Memphis, 2022-23; Atlanta/LA Lakers, 2025-26"
+    verified: true
+
+  - id: n44
+    type: narrative
+    question: "What is the highest single-season team field goal percentage in NBA history, and which team set it?"
+    gold_answer: ".545, by the 1984-85 LA Lakers (3,952 of 7,254)."
+    expected_pages: [211]
+    source: "Records: Regular Season, FIELD GOAL PERCENTAGE, 'Highest field goal percentage, season': .545—LA Lakers, 1984-85 (3,952/7,254)"
+    verified: true
+
+  - id: n45
+    type: narrative
+    question: "Which team had the lowest field goal percentage in a season, and what was it?"
+    gold_answer: ".362, by Milwaukee in 1954-55 (2,187 of 6,041)."
+    expected_pages: [211]
+    source: "Records: Regular Season, 'Lowest field goal percentage, season': .362—Milwaukee, 1954-55 (2,187/6,041)"
+    verified: true
+
+  - id: n46
+    type: narrative
+    question: "What is the NBA Finals record for most points by a team in a four-game series?"
+    gold_answer: "487, by Boston vs. Minneapolis in 1959."
+    expected_pages: [256]
+    source: "Records: NBA Finals, team MOST POINTS, 4-game series: 487—Boston vs. Minneapolis, 1959"
+    verified: true
+
+  - id: n47
+    type: narrative
+    question: "What is the fewest points scored by a team in a four-game NBA Finals series?"
+    gold_answer: "322, by Cleveland vs. San Antonio in 2007."
+    expected_pages: [256]
+    source: "Records: NBA Finals, FEWEST POINTS, 4-game series: 322—Cleveland vs. San Antonio, 2007"
+    verified: true
+
+  - id: n48
+    type: narrative
+    question: "What is the most points scored by a team in a seven-game NBA Finals series?"
+    gold_answer: "827, by Boston vs. the LA Lakers in 1966."
+    expected_pages: [256]
+    source: "Records: NBA Finals, team MOST POINTS, 7-game series: 827—Boston vs. LA Lakers, 1966"
+    verified: true
+
+  - id: n49
+    type: narrative
+    question: "What is the highest team field goal percentage in a four-game NBA Finals series?"
+    gold_answer: ".527, by Detroit vs. the LA Lakers in 1989."
+    expected_pages: [256]
+    source: "Records: NBA Finals, team HIGHEST FIELD GOAL PERCENTAGE, 4-game series: .527—Detroit vs. LA Lakers, 1989"
+    verified: true
+
+  - id: n50
+    type: narrative
+    question: "What is the playoff record for highest team rebound percentage in a two-game series?"
+    gold_answer: ".585, by Boston vs. San Antonio in 1977."
+    expected_pages: [240]
+    source: "Records: Playoffs, HIGHEST REBOUND PERCENTAGE, 2-game series: .585—Boston vs. San Antonio, 1977"
+    verified: true
+
+  - id: n51
+    type: narrative
+    question: "Which team had the most rebounds in a two-game playoff series?"
+    gold_answer: "New York vs. Syracuse in 1959, with 137."
+    expected_pages: [240]
+    source: "Records: Playoffs, MOST REBOUNDS, 2-game series: 137—New York vs. Syracuse, 1959"
+    verified: true
+
+  - id: n52
+    type: numeric
+    question: "Who won the NBA Most Valuable Player award for 1968-69?"
+    gold_answer: "Wes Unseld of Baltimore."
+    expected_pages: [100]
+    gold_sql: "SELECT player, team FROM awards WHERE award = 'NBA Most Valuable Player' AND season_label = '1968-69' ORDER BY player"
+    source: "History: Award Winners, MVP list (heading is on another part of the page): 1968-69 — Wes Unseld, Baltimore"
+    verified: true
+
+  - id: n53
+    type: numeric
+    question: "Who was the NBA Most Valuable Player in 1974-75?"
+    gold_answer: "Bob McAdoo of Buffalo."
+    expected_pages: [100]
+    gold_sql: "SELECT player, team FROM awards WHERE award = 'NBA Most Valuable Player' AND season_label = '1974-75' ORDER BY player"
+    source: "History: Award Winners, MVP list: 1974-75 — Bob McAdoo, Buffalo"
+    verified: true
+
+  - id: n54
+    type: narrative
+    question: "Which team had the highest scoring average in the 2023-24 regular season, and what was it?"
+    gold_answer: "Indiana, at 123.3 points per game (10,110 points in 82 games)."
+    expected_pages: [290]
+    source: "2023-24 Review: Regular Season, TEAM table, first row: IND 82 ... 10110 123.3"
+    verified: true
+
+  - id: n55
+    type: narrative
+    question: "Which team had the highest scoring average in the 2025-26 regular season, and what was it?"
+    gold_answer: "Denver, at 122.1 points per game (10,010 points in 82 games)."
+    expected_pages: [7]
+    source: "2025-26 Review: Regular Season, TEAM table, first row: DEN 82 ... 10010 122.1"
+    verified: true
+
+  - id: n56
+    type: narrative
+    question: "What was De'Aaron Fox's scoring average for Sacramento in 2023-24, and his highest game?"
+    gold_answer: "26.6 points per game over 74 games, with a high of 44."
+    expected_pages: [301]
+    source: "2023-24 Review, SACRAMENTO KINGS player table: De'Aaron Fox 74 G, 1966 PTS, 26.6 AVG, 44 HI"
+    verified: true
+
+  - id: n57
+    type: narrative
+    question: "How many total rebounds did Domantas Sabonis have for Sacramento in 2023-24?"
+    gold_answer: "1,120 rebounds in 82 games (13.7 per game)."
+    expected_pages: [301]
+    source: "2023-24 Review, SACRAMENTO KINGS player table: Domantas Sabonis 82 G, 294 ORB, 826 DRB, 1120 REB"
+    verified: true
+
+  - id: n58
+    type: narrative
+    question: "Which players hold the Emirates NBA Cup Championship Game record for three-pointers made, and how many?"
+    gold_answer: "5, by Damian Lillard (Milwaukee, Dec. 17, 2024), OG Anunoby (New York, Dec. 16, 2025) and Dylan Harper (San Antonio, Dec. 16, 2025)."
+    expected_pages: [218]
+    source: "Records: Emirates NBA Cup, THREE-POINT FIELD GOALS MADE, 'Championship Game': 5—Damian Lillard ...; OG Anunoby ...; Dylan Harper ..."
+    verified: true
+
+  - id: n59
+    type: narrative
+    question: "Who holds the Emirates NBA Cup record for three-point attempts in a game without making any?"
+    gold_answer: "Jayson Tatum, 0-for-10 for Boston at Washington on Nov. 22, 2024."
+    expected_pages: [218]
+    source: "Records: Emirates NBA Cup, 'Most three-point field goal attempts, none made, game': 10—Jayson Tatum, Boston at Washington, Nov. 22, 2024"
+    verified: true
+
+  - id: n60
+    type: narrative
+    question: "In what year was Vlade Divac inducted into the Naismith Hall of Fame?"
+    gold_answer: "2019."
+    expected_pages: [191]
+    source: "History: Hall of Fame list: Vlade Divac . . . 2019"
+    verified: true
+
+  # --- numeric: answered from the loaded SQLite tables (run_sql); gold_sql was executed read-only and matches gold_answer ---
+
+  - id: t1
+    type: numeric
+    question: "Who was the 10th pick in the 2026 NBA Draft, and which team drafted him?"
+    gold_answer: "Brayden Burries, drafted by the Milwaukee Bucks."
+    expected_pages: [52]
+    gold_sql: "SELECT player, drafting_team FROM draft_2026 WHERE pick = 10"
+    verified: true
+
+  - id: t2
+    type: numeric
+    question: "How many players taken in the 2026 NBA Draft were from countries other than the USA?"
+    gold_answer: "13."
+    expected_pages: [52]
+    gold_sql: "SELECT COUNT(*) FROM draft_2026 WHERE country <> 'USA'"
+    verified: true
+
+  - id: t3
+    type: numeric
+    question: "How many players drafted in the 2026 NBA Draft came to the NBA from Michigan?"
+    gold_answer: "3 (Morez Johnson Jr., Yaxel Lendeborg and Aday Mara)."
+    expected_pages: [52]
+    gold_sql: "SELECT COUNT(*) FROM draft_2026 WHERE before_nba = 'Michigan'"
+    verified: true
+
+  - id: t4
+    type: numeric
+    question: "Which teams made the most picks in the 2026 NBA Draft, and how many?"
+    gold_answer: "The Chicago Bulls and San Antonio Spurs, with 4 picks each."
+    expected_pages: [52]
+    gold_sql: "SELECT drafting_team, COUNT(*) AS c FROM draft_2026 GROUP BY drafting_team HAVING c = (SELECT MAX(c2) FROM (SELECT COUNT(*) AS c2 FROM draft_2026 GROUP BY drafting_team)) ORDER BY drafting_team"
+    verified: true
+
+  - id: t5
+    type: numeric
+    question: "Who went first overall in the 2026 NBA Draft, and what school did he come from?"
+    gold_answer: "AJ Dybantsa, from BYU (drafted by the Washington Wizards)."
+    expected_pages: [52]
+    gold_sql: "SELECT player, before_nba FROM draft_2026 WHERE pick = 1"
+    verified: true
+
+  - id: t6
+    type: numeric
+    question: "Which 2026 draftees are from Spain, and where were they picked?"
+    gold_answer: "Aday Mara (pick 12), Sergio De Larrea (pick 25) and Baba Miller (pick 36)."
+    expected_pages: [52]
+    gold_sql: "SELECT player, pick FROM draft_2026 WHERE country = 'Spain' ORDER BY pick"
+    verified: true
+
+  - id: t7
+    type: numeric
+    question: "Which players did the Oklahoma City Thunder select in the 2026 NBA Draft?"
+    gold_answer: "Aday Mara (pick 12), Ebuka Okorie (pick 17) and Ryan Conwell (pick 37)."
+    expected_pages: [52]
+    gold_sql: "SELECT player, pick FROM draft_2026 WHERE drafting_team = 'Oklahoma City Thunder' ORDER BY pick"
+    verified: true
+
+  - id: t8
+    type: numeric
+    question: "Which country other than the USA sent the most players to the 2026 NBA Draft, and how many?"
+    gold_answer: "Spain, with 3 players."
+    expected_pages: [52]
+    gold_sql: "SELECT country, COUNT(*) AS c FROM draft_2026 WHERE country <> 'USA' GROUP BY country ORDER BY c DESC LIMIT 1"
+    verified: true
+
+  - id: t9
+    type: numeric
+    question: "Who has the most career All-NBA selections, and how many (broken down by team)?"
+    gold_answer: "LeBron James, 21 selections (13 first team, 4 second team, 4 third team)."
+    expected_pages: [111]
+    gold_sql: "SELECT player, total, first_team, second_team, third_team FROM all_nba_by_player ORDER BY total DESC LIMIT 1"
+    verified: true
+
+  - id: t10
+    type: numeric
+    question: "Who has the most All-NBA First Team selections, and how many?"
+    gold_answer: "LeBron James, with 13."
+    expected_pages: [111]
+    gold_sql: "SELECT player, first_team FROM all_nba_by_player ORDER BY first_team DESC LIMIT 1"
+    verified: true
+
+  - id: t11
+    type: numeric
+    question: "How many players have at least 10 career All-NBA selections?"
+    gold_answer: "26 players."
+    expected_pages: [111, 112]
+    gold_sql: "SELECT COUNT(*) FROM all_nba_by_player WHERE total >= 10"
+    verified: true
+
+  - id: t12
+    type: numeric
+    question: "How many players have been named to the All-NBA First Team at least 10 times?"
+    gold_answer: "10 players."
+    expected_pages: [111, 112]
+    gold_sql: "SELECT COUNT(*) FROM all_nba_by_player WHERE first_team >= 10"
+    verified: true
+
+  - id: t13
+    type: numeric
+    question: "How many times has Kevin Durant been named All-NBA, and how many of those were First, Second and Third Team?"
+    gold_answer: "12 selections: 6 First Team, 6 Second Team, 0 Third Team."
+    expected_pages: [111]
+    gold_sql: "SELECT total, first_team, second_team, third_team FROM all_nba_by_player WHERE player_search = 'kevin durant'"
+    verified: true
+
+  - id: t14
+    type: numeric
+    question: "How many All-NBA selections did Michael Jordan have in total, and how many were First Team?"
+    gold_answer: "11 selections, 10 of them First Team."
+    expected_pages: [111]
+    gold_sql: "SELECT total, first_team FROM all_nba_by_player WHERE player_search = 'michael jordan'"
+    verified: true
+
+  - id: t15
+    type: numeric
+    question: "What are Stephen Curry's career All-NBA selection counts by team?"
+    gold_answer: "11 total: 4 First Team, 5 Second Team, 2 Third Team."
+    expected_pages: [111]
+    gold_sql: "SELECT total, first_team, second_team, third_team FROM all_nba_by_player WHERE player_search = 'stephen curry'"
+    verified: true
+
+  - id: t16
+    type: numeric
+    question: "How many career All-NBA selections do Nikola Jokic and Giannis Antetokounmpo each have?"
+    gold_answer: "Giannis Antetokounmpo has 9 and Nikola Jokic has 8."
+    expected_pages: [111]
+    gold_sql: "SELECT player, total FROM all_nba_by_player WHERE player_search IN ('nikola jokic','giannis antetokounmpo') ORDER BY player"
+    verified: true
+
+  - id: t17
+    type: numeric
+    question: "Who made the 2025-26 All-NBA First Team?"
+    gold_answer: "Cade Cunningham, Luka Doncic, Nikola Jokic, Shai Gilgeous-Alexander and Victor Wembanyama."
+    expected_pages: [109]
+    gold_sql: "SELECT player FROM all_nba_by_season WHERE season = '2025-26' AND team_level = 'First' ORDER BY player"
+    verified: true
+
+  - id: t18
+    type: numeric
+    question: "Who made the 2015-16 All-NBA First Team?"
+    gold_answer: "Stephen Curry, LeBron James, DeAndre Jordan, Kawhi Leonard and Russell Westbrook."
+    expected_pages: [109]
+    gold_sql: "SELECT player FROM all_nba_by_season WHERE season = '2015-16' AND team_level = 'First' ORDER BY player"
+    verified: true
+
+  - id: t19
+    type: numeric
+    question: "Which Oklahoma City players made an All-NBA team in 2025-26, and on which team?"
+    gold_answer: "Shai Gilgeous-Alexander (First Team) and Chet Holmgren (Third Team)."
+    expected_pages: [109]
+    gold_sql: "SELECT player, team_level FROM all_nba_by_season WHERE season = '2025-26' AND team = 'Oklahoma City' ORDER BY team_level"
+    verified: true
+
+  - id: t20
+    type: numeric
+    question: "In how many seasons was Tim Duncan named to the All-NBA First Team?"
+    gold_answer: "10 seasons."
+    expected_pages: [107, 108]
+    gold_sql: "SELECT COUNT(*) FROM all_nba_by_season WHERE player_search = 'tim duncan' AND team_level = 'First'"
+    verified: true
+
+  - id: t21
+    type: numeric
+    question: "In which seasons was Giannis Antetokounmpo named to the All-NBA First Team?"
+    gold_answer: "2018-19 through 2024-25 (seven straight seasons)."
+    expected_pages: [109]
+    gold_sql: "SELECT season FROM all_nba_by_season WHERE player_search = 'giannis antetokounmpo' AND team_level = 'First' ORDER BY season"
+    verified: true
+
+  - id: t22
+    type: numeric
+    question: "In which seasons did Tim Duncan make the All-NBA Third Team?"
+    gold_answer: "2009-10 and 2014-15."
+    expected_pages: [108, 109]
+    gold_sql: "SELECT season FROM all_nba_by_season WHERE player_search = 'tim duncan' AND team_level = 'Third' ORDER BY season"
+    verified: true
+
+  - id: t23
+    type: numeric
+    question: "Who made the 2024-25 All-NBA First Team, and which teams did they play for?"
+    gold_answer: "Giannis Antetokounmpo (Milwaukee), Shai Gilgeous-Alexander (Oklahoma City), Nikola Jokic (Denver), Donovan Mitchell (Cleveland) and Jayson Tatum (Boston)."
+    expected_pages: [109]
+    gold_sql: "SELECT player, team FROM all_nba_by_season WHERE season = '2024-25' AND team_level = 'First' ORDER BY player"
+    verified: true
+
+  - id: t24
+    type: numeric
+    question: "Who won the 2026 NBA Finals, who did they beat, and what was the series result?"
+    gold_answer: "New York beat San Antonio 4-1."
+    expected_pages: [180]
+    gold_sql: "SELECT winner_team, loser_team, winner_games, loser_games FROM nba_finals WHERE year = 2026"
+    verified: true
+
+  - id: t25
+    type: numeric
+    question: "How many NBA Finals has Boston won?"
+    gold_answer: "18."
+    expected_pages: [179, 180]
+    gold_sql: "SELECT COUNT(*) FROM nba_finals WHERE winner_team = 'Boston'"
+    verified: true
+
+  - id: t26
+    type: numeric
+    question: "Which coach has won the most NBA Finals, and how many?"
+    gold_answer: "Phil Jackson, with 11."
+    expected_pages: [179, 180]
+    gold_sql: "SELECT winner_coach, COUNT(*) AS c FROM nba_finals GROUP BY winner_coach ORDER BY c DESC LIMIT 1"
+    verified: true
+
+  - id: t27
+    type: numeric
+    question: "How many NBA Finals have gone the full seven games?"
+    gold_answer: "20."
+    expected_pages: [179, 180]
+    gold_sql: "SELECT COUNT(*) FROM nba_finals WHERE winner_games = 4 AND loser_games = 3"
+    verified: true
+
+  - id: t28
+    type: numeric
+    question: "Who won the 2020 NBA Finals, who coached the winner, and what was the series score?"
+    gold_answer: "The LA Lakers, coached by Frank Vogel, beat Miami 4-2."
+    expected_pages: [180]
+    gold_sql: "SELECT winner_team, winner_coach, loser_team, winner_games, loser_games FROM nba_finals WHERE year = 2020"
+    verified: true
+
+  - id: t29
+    type: numeric
+    question: "How many NBA Finals did teams coached by Gregg Popovich win?"
+    gold_answer: "5."
+    expected_pages: [179, 180]
+    gold_sql: "SELECT COUNT(*) FROM nba_finals WHERE winner_coach = 'Gregg Popovich'"
+    verified: true
+
+  - id: t30
+    type: numeric
+    question: "In how many NBA Finals did the winning team sweep the series 4-0?"
+    gold_answer: "9."
+    expected_pages: [179, 180]
+    gold_sql: "SELECT COUNT(*) FROM nba_finals WHERE winner_games = 4 AND loser_games = 0"
+    verified: true
+
+  # --- mixed: needs the guide text AND the SQLite tables (gold_sql covers the database part) ---
+
+  - id: m1
+    type: numeric
+    question: "Who was named 2026 NBA Finals MVP, and what was the result of that Finals series?"
+    gold_answer: "Jalen Brunson was Finals MVP; New York beat San Antonio 4-1."
+    expected_pages: [102, 180]
+    gold_sql: "SELECT a.player, f.winner_team, f.loser_team, f.winner_games, f.loser_games FROM awards a JOIN nba_finals f ON f.year = a.season_end_year WHERE a.award = 'NBA Finals Most Valuable Player' AND a.season_end_year = 2026"
+    source: "Text: Award Winners, NBA Finals MVP: 2026 — Jalen Brunson, New York. Database: nba_finals 2026 row."
+    verified: false
+
+  - id: m2
+    type: numeric
+    question: "Who won the 2025-26 NBA MVP award, and which All-NBA team did he make that season?"
+    gold_answer: "Shai Gilgeous-Alexander (Oklahoma City); he made the All-NBA First Team."
+    expected_pages: [100, 109]
+    gold_sql: "SELECT a.player, s.team_level FROM awards a JOIN all_nba_by_season s ON s.season = a.season_label AND s.player_search = a.player_search WHERE a.award = 'NBA Most Valuable Player' AND a.season_label = '2025-26'"
+    source: "Text: Award Winners MVP list, 2025-26 — Shai Gilgeous-Alexander, Oklahoma City. Database: all_nba_by_season."
+    verified: false
+
+  - id: m3
+    type: numeric
+    question: "Who was the 2026 Western Conference Finals MVP, and which All-NBA team did he make for 2025-26?"
+    gold_answer: "Victor Wembanyama of San Antonio; he made the All-NBA First Team."
+    expected_pages: [102, 109]
+    gold_sql: "SELECT a.player, s.team_level FROM awards a JOIN all_nba_by_season s ON s.season_end_year = a.season_end_year AND s.player_search = a.player_search WHERE a.award = 'NBA Western Conference Finals MVP' AND a.season_end_year = 2026"
+    source: "Text: Award Winners, NBA WESTERN CONFERENCE FINALS MVP: 2026 — Victor Wembanyama, San Antonio. Database: all_nba_by_season."
+    verified: false
+
+  - id: m4
+    type: numeric
+    question: "Who was the 2026 Eastern Conference Finals MVP, and which All-NBA team did he make for 2025-26?"
+    gold_answer: "Jalen Brunson of New York; he made the All-NBA Second Team."
+    expected_pages: [102, 109]
+    gold_sql: "SELECT a.player, s.team_level FROM awards a JOIN all_nba_by_season s ON s.season_end_year = a.season_end_year AND s.player_search = a.player_search WHERE a.award = 'NBA Eastern Conference Finals MVP' AND a.season_end_year = 2026"
+    source: "Text: Award Winners, NBA EASTERN CONFERENCE FINALS MVP: 2026 — Jalen Brunson, New York. Database: all_nba_by_season."
+    verified: false
+
+  - id: m5
+    type: mixed
+    question: "In what year was Red Auerbach enshrined in the Hall of Fame, and how many NBA Finals did he win as a coach?"
+    gold_answer: "He was enshrined in 1969 and won 9 NBA Finals as a coach (Boston)."
+    expected_pages: [189, 179, 180]
+    retrieval_pages: [189]  # text pages only; the table pages are reached by run_sql
+    gold_sql: "SELECT COUNT(*) FROM nba_finals WHERE winner_coach = 'Red Auerbach'"
+    source: "Text: Hall of Fame list: Red Auerbach . . . 1969. Database: nba_finals winner_coach."
+    verified: false
+
+  - id: m6
+    type: mixed
+    question: "In what year was Tim Duncan enshrined in the Hall of Fame, and how many times was he All-NBA First Team?"
+    gold_answer: "Enshrined in 2020; named All-NBA First Team 10 times."
+    expected_pages: [191, 111]
+    retrieval_pages: [191]  # text pages only; the table pages are reached by run_sql
+    gold_sql: "SELECT first_team FROM all_nba_by_player WHERE player_search = 'tim duncan'"
+    source: "Text: Hall of Fame list: Tim Duncan . . . 2020. Database: all_nba_by_player."
+    verified: false
+
+  - id: m7
+    type: mixed
+    question: "In what year was Julius Erving enshrined in the Hall of Fame, and how many total All-NBA selections does he have?"
+    gold_answer: "Enshrined in 1993; 7 All-NBA selections (5 First Team, 2 Second Team)."
+    expected_pages: [191, 111]
+    retrieval_pages: [191]  # text pages only; the table pages are reached by run_sql
+    gold_sql: "SELECT total, first_team, second_team FROM all_nba_by_player WHERE player_search = 'julius erving'"
+    source: "Text: Hall of Fame list: Julius Erving . . . 1993. Database: all_nba_by_player."
+    verified: false
+
+  - id: m8
+    type: mixed
+    question: "Who led the 2025 Emirates NBA Cup in scoring average, and which All-NBA team did he make for 2025-26?"
+    gold_answer: "Cade Cunningham (38.3 ppg in the Cup); he made the All-NBA First Team."
+    expected_pages: [27, 109]
+    retrieval_pages: [27]  # text pages only; the table pages are reached by run_sql
+    gold_sql: "SELECT team_level FROM all_nba_by_season WHERE season = '2025-26' AND player_search = 'cade cunningham'"
+    source: "Text: 2025-26 Review, Emirates NBA Cup individual leaders: Cade Cunningham, Detroit, 38.3. Database: all_nba_by_season."
+    verified: false
+
+  - id: m9
+    type: mixed
+    question: "Who was head coach of the 2024-25 NBA champion, and who did that team beat in the Finals and by what series score?"
+    gold_answer: "Mark Daigneault coached the Oklahoma City Thunder, who beat Indiana 4-3."
+    expected_pages: [270, 180]
+    retrieval_pages: [270]  # text pages only; the table pages are reached by run_sql
+    gold_sql: "SELECT winner_team, loser_team, winner_games, loser_games FROM nba_finals WHERE year = 2025"
+    source: "Text: 2024-25 Review: champion Oklahoma City Thunder, Head Coach Mark Daigneault. Database: nba_finals 2025 row."
+    verified: false
+
+  - id: m10
+    type: mixed
+    question: "Who was head coach of the 2025-26 NBA champion, and how many NBA Finals has he won as a coach?"
+    gold_answer: "Mike Brown of the New York Knicks; this is his only Finals win (1)."
+    expected_pages: [6, 180]
+    retrieval_pages: [6]  # text pages only; the table pages are reached by run_sql
+    gold_sql: "SELECT COUNT(*) FROM nba_finals WHERE winner_coach = 'Mike Brown'"
+    source: "Text: 2025-26 Review: 2025-26 NBA CHAMPION NEW YORK KNICKS, Head Coach Mike Brown. Database: nba_finals winner_coach."
+    verified: false
+
+  - id: m11
+    type: numeric
+    question: "Who won the Bob Lanier Community Assist Award for 2013-14, and how many total All-NBA selections does he have?"
+    gold_answer: "Stephen Curry (Golden State); 11 All-NBA selections."
+    expected_pages: [103, 111]
+    gold_sql: "SELECT a.player, p.total FROM awards a JOIN all_nba_by_player p ON p.player_search = a.player_search WHERE a.award = 'Bob Lanier Community Assist Award' AND a.season_label = '2013-14'"
+    source: "Text: Award Winners, BOB LANIER COMMUNITY ASSIST AWARD: 2013-14 — Stephen Curry, Golden State. Database: all_nba_by_player."
+    verified: false
+
+  - id: m12
+    type: mixed
+    question: "Which team did Kevin Durant play for in the 2026 All-Star Game, and which All-NBA team did he make for 2025-26?"
+    gold_answer: "He played for Team Stripes; he made the All-NBA Second Team (Houston)."
+    expected_pages: [31, 109]
+    retrieval_pages: [31]  # text pages only; the table pages are reached by run_sql
+    gold_sql: "SELECT team_level, team FROM all_nba_by_season WHERE season = '2025-26' AND player_search = 'kevin durant'"
+    source: "Text: 2026 All-Star Game final box, HOME: STRIPES lists Kevin Durant. Database: all_nba_by_season."
+    verified: false
+
+  # --- unanswerable: the guide does not contain the answer; the agent should say so, not guess ---
+
+  - id: u1
+    type: unanswerable
+    question: "What is Victor Wembanyama's salary for the 2026-27 season?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Player salaries and contracts. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u2
+    type: unanswerable
+    question: "How much prize money does the Emirates NBA Cup winner receive per player?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Cup prize money. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u3
+    type: unanswerable
+    question: "How many viewers watched Game 7 of the 2025 NBA Finals on TV?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: TV viewership. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u4
+    type: unanswerable
+    question: "How tall is Victor Wembanyama?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Player heights. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u5
+    type: unanswerable
+    question: "What is Stephen Curry's date of birth?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Player birth dates. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u6
+    type: unanswerable
+    question: "Who is the current NBA commissioner?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: League executives. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u7
+    type: unanswerable
+    question: "Who won the 2026-27 NBA championship?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Future season; the 2026-27 edition covers results through 2025-26. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u8
+    type: unanswerable
+    question: "Who was selected first overall in the 2027 NBA Draft?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Future draft. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u9
+    type: unanswerable
+    question: "Who won the 2026 WNBA championship?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: WNBA is not covered. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u10
+    type: unanswerable
+    question: "What is the NBA salary cap for the 2026-27 season?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Salary cap. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u11
+    type: unanswerable
+    question: "What is LeBron James's net worth?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Player finances. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u12
+    type: unanswerable
+    question: "What is the seating capacity of Madison Square Garden?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Arena capacity (the guide lists game attendance, not capacity). Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u13
+    type: unanswerable
+    question: "Which sneaker brand does Jalen Brunson wear?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Endorsements. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u14
+    type: unanswerable
+    question: "What was Nikola Jokic's player efficiency rating (PER) in 2025-26?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Advanced metric not published. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u15
+    type: unanswerable
+    question: "What was Shai Gilgeous-Alexander's VORP in 2025-26?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Advanced metric not published. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u16
+    type: unanswerable
+    question: "What is the name of the New York Knicks' mascot?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Team mascots. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u17
+    type: unanswerable
+    question: "What was the average ticket price for Game 1 of the 2026 NBA Finals?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Ticket prices. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false
+
+  - id: u18
+    type: unanswerable
+    question: "What are the betting odds for the 2026-27 NBA championship?"
+    gold_answer: null
+    expected_pages: []
+    note: "Not in the guide: Betting odds. Absence confirmed by keyword search of the extracted PDF text."
+    verified: false

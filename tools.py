@@ -57,14 +57,16 @@ def get_embed_client() -> genai.Client:
 
 def get_collection(
     data_dir: str | Path | None = None,
-    name: str = config.DEFAULT_COLLECTION,
+    name: str | None = None,
 ) -> chromadb.Collection:
-    """Opens the existing guide collection without creating anything on disk.
+    """Opens the existing guide collection without creating anything on disk (defaults: EMBED_BACKEND's store).
 
     Raises:
         RetrievalError: If the directory or collection does not exist.
     """
-    data_path = Path(data_dir if data_dir is not None else config.DATA_DIR).resolve()
+    spec = config.get_embed_spec()
+    name = name or spec.collection
+    data_path = Path(data_dir if data_dir is not None else spec.data_dir).resolve()
     if not data_path.is_dir():
         raise RetrievalError(f"Vector store '{data_path.name}' not found. Run embed_data.py first.")
     try:
@@ -107,8 +109,12 @@ def search(
     collection: chromadb.Collection | None = None,
     client: genai.Client | None = None,
     mode: str | None = None,
+    spec: config.EmbedSpec | None = None,
 ) -> SearchResult:
     """Embeds `query` (RETRIEVAL_QUERY) and returns the `k` nearest chunks (default SEARCH_K), closest first.
+
+    `spec` is the embedding backend the collection was built with (default: EMBED_BACKEND); a Gemini client is
+    only created for a Gemini backend.
 
     With an acronym match (acronyms.expand) and ACRONYM_MODE:
       both: the original and expanded queries are embedded in ONE embed_texts call, each searched, and the
@@ -134,21 +140,26 @@ def search(
     count = collection.count()
     if count == 0:
         raise RetrievalError(f"Collection '{collection.name}' is empty. Run embed_data.py first.")
-    client = client if client is not None else get_embed_client()
+    spec = spec or config.get_embed_spec()
+    if client is None and not spec.local:
+        client = get_embed_client()
     n = min(k, count)
+
+    def embed(texts: list[str]) -> list[list[float]]:
+        return embed_texts(client=client, texts=texts, task_type="RETRIEVAL_QUERY", model=spec.model, dim=spec.dim)
 
     expansion = acronyms.expand(query) if mode != "off" else None
     if expansion is not None and mode == "both":
-        original, expanded = embed_texts(client=client, texts=[query, expansion.query], task_type="RETRIEVAL_QUERY")
+        original, expanded = embed([query, expansion.query])
         rankings = [_query_chroma(collection, original, n), _query_chroma(collection, expanded, n)]
         return SearchResult(merge_hits(rankings, n), [query, expansion.query])
 
-    [vector] = embed_texts(client=client, texts=[query], task_type="RETRIEVAL_QUERY")
+    [vector] = embed([query])
     hits = _query_chroma(collection, vector, n)
     if expansion is not None and mode == "fallback" and not any(
         acronyms.mentions_any(h.text, expansion.terms) for h in hits
     ):
-        [vector2] = embed_texts(client=client, texts=[expansion.query], task_type="RETRIEVAL_QUERY")
+        [vector2] = embed([expansion.query])
         rankings = [hits, _query_chroma(collection, vector2, n)]
         return SearchResult(merge_hits(rankings, n), [query, expansion.query])
     return SearchResult(hits, [query])
@@ -160,9 +171,10 @@ def retrieve(
     collection: chromadb.Collection | None = None,
     client: genai.Client | None = None,
     mode: str | None = None,
+    spec: config.EmbedSpec | None = None,
 ) -> list[Hit]:
     """The hits of search(); kept for callers that only need the passages."""
-    return search(query, k=k, collection=collection, client=client, mode=mode).hits
+    return search(query, k=k, collection=collection, client=client, mode=mode, spec=spec).hits
 
 
 def searched_line(queries: list[str]) -> str:
@@ -203,6 +215,9 @@ def search_guide(query: str, k: int | None = None) -> str:
     except ChromaError as e:
         logger.warning("Chroma error during search: %s", e)
         return f"SEARCH ERROR: vector store query failed ({type(e).__name__})."
+    except OSError as e:
+        logger.warning("Local embedding model could not be loaded: %s", e)
+        return "SEARCH ERROR: local embedding model could not be loaded."
 
 
 @tool

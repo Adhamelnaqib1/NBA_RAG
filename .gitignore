@@ -6,6 +6,7 @@
 env/
 venv/
 data/
+data_bge/
 *.db
 
 # Python cache
@@ -25,3 +26,6 @@ table_preview/
 table_report.md
 *.log
 nba_stats.backup.db
+
+# Evaluation: raw query-embedding cache (large; regenerate with eval_retrieval.py)
+eval_results/embed_cache.jsonl

@@ -26,7 +26,7 @@ EMBED_MODEL: str = "gemini-embedding-001"
 EMBED_DIM: int = 1536
 DEFAULT_COLLECTION: str = "nba_guide__gemini-001__d1536"
 
-# Chat LLM provider, model and limits (embeddings always use Gemini with the paid key above)
+# Chat LLM provider, model and limits (Gemini embeddings use the paid key above; see EMBED_BACKENDS below)
 LLM_PROVIDERS: tuple[str, ...] = ("nvidia", "gemini")
 DEFAULT_LLM_PROVIDER: str = "nvidia"
 DEFAULT_LLM_MODELS: dict[str, str] = {
@@ -44,6 +44,70 @@ MAX_SEARCH_K: int = 10
 
 DATA_DIR: Path = Path(os.getenv("DATA_DIR", "./data"))
 DB_PATH: Path = Path(os.getenv("DB_PATH", "./nba_stats.db"))
+
+# Embedding backends. gemini: gemini-embedding-001 on the paid key, store in DATA_DIR (the default).
+# bge: BAAI/bge-base-en-v1.5 run locally with sentence-transformers (no key), in its own store BGE_DATA_DIR so the
+# Gemini store is never touched. Ingestion and queries both go through embed_data.embed_texts with the same spec.
+EMBED_BACKENDS: tuple[str, ...] = ("gemini", "bge")
+DEFAULT_EMBED_BACKEND: str = "gemini"
+BGE_MODEL: str = "BAAI/bge-base-en-v1.5"
+BGE_DIM: int = 768
+BGE_COLLECTION: str = "nba_guide__bge-base-en-v1.5__d768"
+LOCAL_EMBED_MODELS: frozenset[str] = frozenset({BGE_MODEL})
+EMBED_DEVICES: tuple[str, ...] = ("auto", "mps", "cuda", "cpu")
+
+
+@dataclass(frozen=True)
+class EmbedSpec:
+    """Everything that must match between ingestion and query time for one embedding backend."""
+
+    backend: str
+    model: str
+    dim: int
+    collection: str
+    data_dir: Path
+
+    @property
+    def local(self) -> bool:
+        return self.model in LOCAL_EMBED_MODELS
+
+
+def get_embed_backend() -> str:
+    """EMBED_BACKEND, lowercased: "gemini" (default) or "bge".
+
+    Raises:
+        ValueError: For any other value.
+    """
+    backend = os.getenv("EMBED_BACKEND", "").strip().lower() or DEFAULT_EMBED_BACKEND
+    if backend not in EMBED_BACKENDS:
+        raise ValueError(f"EMBED_BACKEND must be one of {', '.join(EMBED_BACKENDS)}; got {backend!r}.")
+    return backend
+
+
+def get_embed_spec(backend: str | None = None) -> EmbedSpec:
+    """The spec for `backend` (default: EMBED_BACKEND).
+
+    Raises:
+        ValueError: If the backend is unknown.
+    """
+    backend = backend or get_embed_backend()
+    if backend == "gemini":
+        return EmbedSpec("gemini", EMBED_MODEL, EMBED_DIM, DEFAULT_COLLECTION, DATA_DIR)
+    if backend == "bge":
+        return EmbedSpec("bge", BGE_MODEL, BGE_DIM, BGE_COLLECTION, Path(os.getenv("BGE_DATA_DIR", "./data_bge")))
+    raise ValueError(f"Embedding backend must be one of {', '.join(EMBED_BACKENDS)}; got {backend!r}.")
+
+
+def get_embed_device() -> str:
+    """EMBED_DEVICE for local embedding models: auto (default: mps, then cuda, then cpu), mps, cuda or cpu.
+
+    Raises:
+        ValueError: For any other value.
+    """
+    device = os.getenv("EMBED_DEVICE", "").strip().lower() or "auto"
+    if device not in EMBED_DEVICES:
+        raise ValueError(f"EMBED_DEVICE must be one of {', '.join(EMBED_DEVICES)}; got {device!r}.")
+    return device
 
 
 def get_embed_api_key(required: bool = True) -> str:
